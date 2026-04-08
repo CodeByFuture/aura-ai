@@ -15,6 +15,16 @@ const THEMES = {
 
 const ADMIN_PASSWORD = "admin123";
 
+// Game dev quick prompts
+const GAME_PROMPTS = [
+  { icon: "🤖", label: "Enemy AI", prompt: "Write enemy AI logic in Unity C# for a basic patrol and chase system" },
+  { icon: "💬", label: "Dialogue", prompt: "Generate a branching dialogue script for an NPC shopkeeper in RPG style" },
+  { icon: "🗺️", label: "Level Design", prompt: "Give me 5 creative level design ideas for a 2D platformer game" },
+  { icon: "🐛", label: "Debug Help", prompt: "Help me debug this Unity error: NullReferenceException on Start()" },
+  { icon: "⚔️", label: "Combat", prompt: "Write a smooth melee combat system in Unreal Engine Blueprints" },
+  { icon: "🎯", label: "Game Loop", prompt: "Explain how to build a complete game loop with score, lives, and game over screen in Godot" },
+];
+
 function estimateTokens(t) { return Math.ceil((t || "").length / 4); }
 function generateId() { return Math.random().toString(36).slice(2, 10); }
 function formatTime(ts) { return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
@@ -100,11 +110,17 @@ function MessageBubble({ msg, dark, onReact, isLatest, onTypeDone, accent, accen
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-end" : "flex-start", marginBottom: 8 }}>
       <div style={{ fontSize: "0.7rem", color: dark ? "#666" : "#aaa", marginBottom: 4, paddingLeft: isUser ? 0 : 4, paddingRight: isUser ? 4 : 0 }}>
-        {isUser ? "You" : "✦ Aura"} · {formatTime(msg.ts)}
+        {isUser ? "You" : msg.isGameDev ? "🎮 Game Dev AI" : "✦ Aura"} · {formatTime(msg.ts)}
       </div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, flexDirection: isUser ? "row-reverse" : "row" }}>
-        <div style={{ maxWidth: "72%", padding: "14px 18px", borderRadius: isUser ? "20px 20px 6px 20px" : "20px 20px 20px 6px", background: isUser ? `linear-gradient(135deg, ${accent}, ${accent2})` : dark ? "#1e1e2e" : "#f5f5f7", color: isUser ? "#fff" : dark ? "#e8e6f0" : "#1a1a2e", boxShadow: isUser ? `0 4px 20px ${accent}55` : dark ? "0 4px 16px rgba(0,0,0,0.3)" : "0 4px 16px rgba(0,0,0,0.08)", fontFamily: "'DM Sans', sans-serif", fontSize: "0.92rem", lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, flexDirection: isUser ? "row-reverse" : "row", maxWidth: "100%" }}>
+        <div style={{ maxWidth: "75%", padding: "14px 18px", borderRadius: isUser ? "20px 20px 6px 20px" : "20px 20px 20px 6px", background: isUser ? `linear-gradient(135deg, ${accent}, ${accent2})` : msg.isGameDev ? (dark ? "#1a2a1a" : "#f0fff0") : dark ? "#1e1e2e" : "#f5f5f7", color: isUser ? "#fff" : dark ? "#e8e6f0" : "#1a1a2e", boxShadow: isUser ? `0 4px 20px ${accent}55` : dark ? "0 4px 16px rgba(0,0,0,0.3)" : "0 4px 16px rgba(0,0,0,0.08)", fontFamily: msg.isGameDev ? "'JetBrains Mono', monospace" : "'DM Sans', sans-serif", fontSize: "0.92rem", lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word", border: msg.isGameDev && !isUser ? `1px solid #10b98133` : "none" }}>
           {msg.imageUrl && <div style={{ marginBottom: 10 }}><img src={msg.imageUrl} alt="generated" style={{ maxWidth: "100%", borderRadius: 12, display: "block" }} /><div style={{ fontSize: "0.72rem", opacity: 0.7, marginTop: 6 }}>🎨 AI Generated</div></div>}
+          {msg.videoUrl && (
+            <div style={{ marginBottom: 10 }}>
+              <video src={msg.videoUrl} controls style={{ maxWidth: "100%", borderRadius: 12, display: "block" }} />
+              <div style={{ fontSize: "0.72rem", opacity: 0.7, marginTop: 6 }}>🎬 AI Generated Video</div>
+            </div>
+          )}
           {!isUser && isLatest && !typed ? <TypeWriter text={msg.content} speed={10} onDone={() => { setTyped(true); onTypeDone && onTypeDone(); }} /> : <span>{msg.content}</span>}
           {msg.reactions && msg.reactions.length > 0 && (
             <div style={{ marginTop: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -135,26 +151,27 @@ function AdminPanel({ users, dark, accent, accent2, onClose }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [authError, setAuthError] = useState("");
   const [viewingChat, setViewingChat] = useState(null);
-  const c = { bg: dark ? "#0d0d1a" : "#f8f8fc", surface: dark ? "#161628" : "#fff", card: dark ? "#1e1e2e" : "#f5f5f7", border: dark ? "#2a2a40" : "#e8e8f0", text: dark ? "#e8e6f0" : "#1a1a2e", muted: dark ? "#666680" : "#9090a0" };
+  const c = { surface: dark ? "#161628" : "#fff", card: dark ? "#1e1e2e" : "#f5f5f7", border: dark ? "#2a2a40" : "#e8e8f0", text: dark ? "#e8e6f0" : "#1a1a2e", muted: dark ? "#666680" : "#9090a0" };
   const getUserSessions = (u) => JSON.parse(localStorage.getItem(`aura_sessions_${u}`) || "{}");
   const allUsers = Object.entries(users);
+  const totalMsgs = allUsers.reduce((a, [u]) => a + Object.values(getUserSessions(u)).reduce((b, s) => b + s.messages.length, 0), 0);
 
   if (!authenticated) {
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
-        <div style={{ background: c.surface, borderRadius: 20, padding: "36px 32px", width: 360, boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${c.border}`, animation: "fadeUp 0.3s ease" }}>
+        <div style={{ background: c.surface, borderRadius: 20, padding: "36px 32px", width: "min(360px, 90vw)", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${c.border}`, animation: "fadeUp 0.3s ease" }}>
           <div style={{ textAlign: "center", marginBottom: 24 }}>
             <div style={{ fontSize: "2rem", marginBottom: 8 }}>👑</div>
             <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.3rem", color: c.text }}>Admin Access</div>
             <div style={{ fontSize: "0.8rem", color: c.muted, marginTop: 4 }}>Password: admin123</div>
           </div>
           <input type="password" placeholder="Admin password" value={adminPass} onChange={e => setAdminPass(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { if (adminPass === ADMIN_PASSWORD) { setAuthenticated(true); setAuthError(""); } else setAuthError("Wrong password"); } }}
-            style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.9rem", outline: "none", marginBottom: 8 }}
+            onKeyDown={e => { if (e.key === "Enter") { if (adminPass === ADMIN_PASSWORD) setAuthenticated(true); else setAuthError("Wrong password"); } }}
+            style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.9rem", outline: "none", marginBottom: 8, boxSizing: "border-box" }}
             onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = c.border} />
           {authError && <div style={{ color: "#f87171", fontSize: "0.8rem", marginBottom: 8 }}>{authError}</div>}
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => { if (adminPass === ADMIN_PASSWORD) { setAuthenticated(true); } else setAuthError("Wrong password"); }}
+            <button onClick={() => { if (adminPass === ADMIN_PASSWORD) setAuthenticated(true); else setAuthError("Wrong password"); }}
               style={{ flex: 1, padding: "11px", borderRadius: 12, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Enter →</button>
             <button onClick={onClose} style={{ padding: "11px 16px", borderRadius: 12, border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer" }}>Cancel</button>
           </div>
@@ -163,98 +180,55 @@ function AdminPanel({ users, dark, accent, accent2, onClose }) {
     );
   }
 
-  const totalMsgs = allUsers.reduce((a, [u]) => a + Object.values(getUserSessions(u)).reduce((b, s) => b + s.messages.length, 0), 0);
-  const chartData = allUsers.slice(0, 7).map(([u]) => ({ label: u.slice(0, 4), value: Object.values(getUserSessions(u)).reduce((a, s) => a + s.messages.length, 0) }));
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
-      <div style={{ background: c.surface, borderRadius: 24, width: "90vw", maxWidth: 900, maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${c.border}`, animation: "fadeUp 0.3s ease" }}>
-        <div style={{ padding: "20px 28px", borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: `linear-gradient(135deg, ${accent}22, ${accent2}11)` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>👑</div>
-            <div>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.2rem", color: c.text }}>Admin Panel</div>
-              <div style={{ fontSize: "0.72rem", color: c.muted }}>{allUsers.length} users · {totalMsgs} total messages</div>
-            </div>
+      <div style={{ background: c.surface, borderRadius: 24, width: "95vw", maxWidth: 900, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${c.border}`, animation: "fadeUp 0.3s ease" }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: `linear-gradient(135deg, ${accent}22, ${accent2}11)` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem" }}>👑</div>
+            <div><div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", color: c.text }}>Admin Panel</div><div style={{ fontSize: "0.7rem", color: c.muted }}>{allUsers.length} users · {totalMsgs} msgs</div></div>
           </div>
           <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-          <div style={{ width: 240, borderRight: `1px solid ${c.border}`, overflowY: "auto", padding: "16px 12px" }}>
-            <div style={{ fontSize: "0.68rem", color: c.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", padding: "0 8px 10px" }}>All Users</div>
+        <div style={{ display: "flex", flex: 1, overflow: "hidden", flexDirection: window.innerWidth < 600 ? "column" : "row" }}>
+          <div style={{ width: window.innerWidth < 600 ? "100%" : 220, borderRight: window.innerWidth < 600 ? "none" : `1px solid ${c.border}`, borderBottom: window.innerWidth < 600 ? `1px solid ${c.border}` : "none", overflowY: "auto", padding: "12px", maxHeight: window.innerWidth < 600 ? 150 : "none" }}>
             {allUsers.map(([username]) => {
               const s = getUserSessions(username);
               const msgs = Object.values(s).reduce((a, sess) => a + sess.messages.length, 0);
               return (
-                <div key={username} onClick={() => setSelectedUser(username)}
-                  style={{ padding: "12px", borderRadius: 12, cursor: "pointer", marginBottom: 4, background: selectedUser === username ? `${accent}22` : "transparent", border: `1px solid ${selectedUser === username ? accent : "transparent"}`, transition: "all 0.15s" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.85rem", color: "#fff", fontWeight: 700, flexShrink: 0 }}>{username[0].toUpperCase()}</div>
-                    <div><div style={{ fontSize: "0.85rem", fontWeight: 600, color: c.text }}>{username}</div><div style={{ fontSize: "0.7rem", color: c.muted }}>{msgs} messages</div></div>
-                  </div>
+                <div key={username} onClick={() => setSelectedUser(username)} style={{ padding: "10px", borderRadius: 10, cursor: "pointer", marginBottom: 4, background: selectedUser === username ? `${accent}22` : "transparent", border: `1px solid ${selectedUser === username ? accent : "transparent"}`, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", color: "#fff", fontWeight: 700, flexShrink: 0 }}>{username[0].toUpperCase()}</div>
+                  <div><div style={{ fontSize: "0.82rem", color: c.text }}>{username}</div><div style={{ fontSize: "0.68rem", color: c.muted }}>{msgs} msgs</div></div>
                 </div>
               );
             })}
           </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-            {!selectedUser ? (
-              <div>
-                <div style={{ fontSize: "0.78rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 16 }}>Overview</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
-                  {[{ label: "Total Users", value: allUsers.length, icon: "👥", color: accent }, { label: "Total Messages", value: totalMsgs, icon: "💬", color: accent2 }, { label: "New Today", value: allUsers.filter(([, u]) => new Date(u.createdAt).toDateString() === new Date().toDateString()).length, icon: "🆕", color: "#10b981" }].map(({ label, value, icon, color }) => (
-                    <div key={label} style={{ background: `${color}15`, borderRadius: 14, padding: "16px", border: `1px solid ${color}30` }}>
-                      <div style={{ fontSize: "1.3rem", marginBottom: 6 }}>{icon}</div>
-                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.6rem", color: c.text, fontWeight: 700 }}>{value}</div>
-                      <div style={{ fontSize: "0.72rem", color: c.muted, marginTop: 2 }}>{label}</div>
-                    </div>
-                  ))}
-                </div>
-                {chartData.length > 0 && <div style={{ background: c.card, borderRadius: 16, padding: "20px", border: `1px solid ${c.border}` }}><BarChart data={chartData} color={accent} label="Messages per User" /></div>}
-                <div style={{ fontSize: "0.85rem", color: c.muted, marginTop: 16, textAlign: "center" }}>← Select a user to view details</div>
-              </div>
-            ) : (() => {
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            {!selectedUser ? <div style={{ color: c.muted, fontSize: "0.85rem", textAlign: "center", marginTop: 40 }}>← Select a user</div> : (() => {
               const userSessions = getUserSessions(selectedUser);
               const allMsgs = Object.values(userSessions).flatMap(s => s.messages);
-              const tokens = allMsgs.reduce((a, m) => a + estimateTokens(m.content), 0);
-              const sessionChart = Object.values(userSessions).slice(0, 8).map(s => ({ label: s.title.slice(0, 5), value: s.messages.length }));
               return (
-                <div style={{ animation: "fadeUp 0.2s ease" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
-                    <div style={{ width: 52, height: 52, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem", color: "#fff", fontWeight: 700 }}>{selectedUser[0].toUpperCase()}</div>
-                    <div>
-                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.3rem", color: c.text }}>{selectedUser}</div>
-                      <div style={{ fontSize: "0.75rem", color: c.muted }}>Joined {users[selectedUser]?.createdAt ? formatDate(users[selectedUser].createdAt) : "Unknown"}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
-                    {[{ label: "Chats", value: Object.keys(userSessions).length, icon: "📁" }, { label: "Messages", value: allMsgs.length, icon: "💬" }, { label: "Tokens", value: tokens.toLocaleString(), icon: "⚡" }, { label: "Images", value: allMsgs.filter(m => m.imageUrl).length, icon: "🖼️" }].map(({ label, value, icon }) => (
-                      <div key={label} style={{ background: `${accent}15`, borderRadius: 12, padding: "12px 14px", border: `1px solid ${accent}25` }}>
-                        <div style={{ fontSize: "1rem", marginBottom: 4 }}>{icon}</div>
-                        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.2rem", color: c.text, fontWeight: 700 }}>{value}</div>
-                        <div style={{ fontSize: "0.68rem", color: c.muted }}>{label}</div>
+                <div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 8, marginBottom: 16 }}>
+                    {[{ label: "Chats", value: Object.keys(userSessions).length, icon: "📁" }, { label: "Messages", value: allMsgs.length, icon: "💬" }, { label: "Tokens", value: allMsgs.reduce((a, m) => a + estimateTokens(m.content), 0).toLocaleString(), icon: "⚡" }, { label: "Images", value: allMsgs.filter(m => m.imageUrl).length, icon: "🖼️" }].map(({ label, value, icon }) => (
+                      <div key={label} style={{ background: `${accent}15`, borderRadius: 10, padding: "10px", border: `1px solid ${accent}25`, textAlign: "center" }}>
+                        <div>{icon}</div>
+                        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", color: c.text, fontWeight: 700 }}>{value}</div>
+                        <div style={{ fontSize: "0.65rem", color: c.muted }}>{label}</div>
                       </div>
                     ))}
                   </div>
-                  {sessionChart.length > 0 && <div style={{ background: c.card, borderRadius: 14, padding: "16px", border: `1px solid ${c.border}`, marginBottom: 16 }}><BarChart data={sessionChart} color={accent} label="Messages per Conversation" /></div>}
-                  <div style={{ fontSize: "0.72rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>Conversations</div>
                   {Object.values(userSessions).sort((a, b) => b.createdAt - a.createdAt).map(s => (
-                    <div key={s.id} style={{ background: c.card, borderRadius: 12, padding: "12px 16px", border: `1px solid ${c.border}`, cursor: "pointer", transition: "all 0.15s", marginBottom: 6 }}
-                      onClick={() => setViewingChat(viewingChat === s.id ? null : s.id)}
-                      onMouseEnter={e => e.currentTarget.style.borderColor = accent}
-                      onMouseLeave={e => e.currentTarget.style.borderColor = c.border}>
+                    <div key={s.id} style={{ background: c.card, borderRadius: 10, padding: "10px 14px", border: `1px solid ${c.border}`, cursor: "pointer", marginBottom: 6 }} onClick={() => setViewingChat(viewingChat === s.id ? null : s.id)}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <div style={{ fontSize: "0.85rem", color: c.text, fontWeight: 500 }}>{s.title}</div>
-                        <div style={{ fontSize: "0.72rem", color: c.muted }}>{s.messages.length} msgs · {formatDate(s.createdAt)}</div>
+                        <div style={{ fontSize: "0.82rem", color: c.text }}>{s.title}</div>
+                        <div style={{ fontSize: "0.7rem", color: c.muted }}>{s.messages.length} msgs</div>
                       </div>
-                      {viewingChat === s.id && s.messages.length > 0 && (
-                        <div style={{ marginTop: 10, borderTop: `1px solid ${c.border}`, paddingTop: 10, maxHeight: 200, overflowY: "auto" }}>
-                          {s.messages.slice(0, 10).map(m => (
-                            <div key={m.id} style={{ fontSize: "0.78rem", color: m.role === "user" ? accent2 : c.muted, marginBottom: 4 }}>
-                              <span style={{ fontWeight: 600 }}>{m.role === "user" ? "User" : "AI"}: </span>{m.content.slice(0, 120)}{m.content.length > 120 ? "…" : ""}
-                            </div>
-                          ))}
+                      {viewingChat === s.id && s.messages.slice(0, 8).map(m => (
+                        <div key={m.id} style={{ fontSize: "0.75rem", color: m.role === "user" ? accent2 : c.muted, marginTop: 4 }}>
+                          <span style={{ fontWeight: 600 }}>{m.role === "user" ? "User" : "AI"}: </span>{m.content.slice(0, 100)}…
                         </div>
-                      )}
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -269,55 +243,116 @@ function AdminPanel({ users, dark, accent, accent2, onClose }) {
 
 function ChartsDashboard({ sessions, dark, accent, accent2, totalMessages, totalTokens, onClose }) {
   const c = { surface: dark ? "#161628" : "#fff", card: dark ? "#1e1e2e" : "#f5f5f7", border: dark ? "#2a2a40" : "#e8e8f0", text: dark ? "#e8e6f0" : "#1a1a2e", muted: dark ? "#666680" : "#9090a0" };
-  const last7 = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    return { label: d.toLocaleDateString([], { weekday: "short" }), value: Object.values(sessions).flatMap(s => s.messages).filter(m => new Date(m.ts).toDateString() === d.toDateString()).length };
-  });
+  const last7 = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return { label: d.toLocaleDateString([], { weekday: "short" }), value: Object.values(sessions).flatMap(s => s.messages).filter(m => new Date(m.ts).toDateString() === d.toDateString()).length }; });
   const allMsgs = Object.values(sessions).flatMap(s => s.messages);
   const userMsgs = allMsgs.filter(m => m.role === "user").length;
   const aiMsgs = allMsgs.filter(m => m.role === "assistant").length;
   const imgMsgs = allMsgs.filter(m => m.imageUrl).length;
   const todayMsgs = allMsgs.filter(m => new Date(m.ts).toDateString() === new Date().toDateString()).length;
-  const sessionData = Object.values(sessions).slice(0, 6).map(s => ({ label: s.title.slice(0, 5), value: s.messages.length }));
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
-      <div style={{ background: c.surface, borderRadius: 24, width: "90vw", maxWidth: 800, maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${c.border}`, animation: "fadeUp 0.3s ease" }}>
-        <div style={{ padding: "20px 28px", borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: `linear-gradient(135deg, ${accent}22, ${accent2}11)` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>📊</div>
-            <div>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.2rem", color: c.text }}>Usage Dashboard</div>
-              <div style={{ fontSize: "0.72rem", color: c.muted }}>Your Aura AI statistics</div>
-            </div>
+      <div style={{ background: c.surface, borderRadius: 24, width: "95vw", maxWidth: 800, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${c.border}`, animation: "fadeUp 0.3s ease" }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: `linear-gradient(135deg, ${accent}22, ${accent2}11)` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem" }}>📊</div>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", color: c.text }}>Usage Dashboard</div>
           </div>
           <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
-        <div style={{ overflowY: "auto", padding: "24px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+        <div style={{ overflowY: "auto", padding: "20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 20 }}>
             {[{ label: "Total Messages", value: totalMessages, icon: "💬", color: accent }, { label: "Est. Tokens", value: totalTokens.toLocaleString(), icon: "⚡", color: accent2 }, { label: "Conversations", value: Object.keys(sessions).length, icon: "📁", color: "#10b981" }, { label: "Today", value: todayMsgs, icon: "📅", color: "#f59e0b" }].map(({ label, value, icon, color }) => (
-              <div key={label} style={{ background: `${color}15`, borderRadius: 16, padding: "16px 18px", border: `1px solid ${color}30` }}>
-                <div style={{ fontSize: "1.4rem", marginBottom: 8 }}>{icon}</div>
-                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", color: c.text, fontWeight: 700 }}>{value}</div>
-                <div style={{ fontSize: "0.72rem", color: c.muted, marginTop: 2 }}>{label}</div>
+              <div key={label} style={{ background: `${color}15`, borderRadius: 14, padding: "14px", border: `1px solid ${color}30` }}>
+                <div style={{ fontSize: "1.3rem", marginBottom: 6 }}>{icon}</div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.4rem", color: c.text, fontWeight: 700 }}>{value}</div>
+                <div style={{ fontSize: "0.7rem", color: c.muted, marginTop: 2 }}>{label}</div>
               </div>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 16 }}>
-            <div style={{ background: c.card, borderRadius: 16, padding: "20px", border: `1px solid ${c.border}` }}>
-              <BarChart data={last7} color={accent} label="Messages — Last 7 Days" />
-            </div>
-            <div style={{ background: c.card, borderRadius: 16, padding: "20px", border: `1px solid ${c.border}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: "0.68rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Message Types</div>
-              <DonutChart segments={[{ value: userMsgs, color: accent }, { value: aiMsgs, color: accent2 }, { value: imgMsgs, color: "#10b981" }]} size={90} />
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.72rem", width: "100%" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: accent }}>● You</span><span style={{ color: c.muted }}>{userMsgs}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: accent2 }}>● Aura</span><span style={{ color: c.muted }}>{aiMsgs}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#10b981" }}>● Images</span><span style={{ color: c.muted }}>{imgMsgs}</span></div>
-              </div>
+          <div style={{ background: c.card, borderRadius: 14, padding: "16px", border: `1px solid ${c.border}`, marginBottom: 12 }}>
+            <BarChart data={last7} color={accent} label="Messages — Last 7 Days" />
+          </div>
+          <div style={{ background: c.card, borderRadius: 14, padding: "16px", border: `1px solid ${c.border}`, display: "flex", alignItems: "center", gap: 20 }}>
+            <DonutChart segments={[{ value: userMsgs, color: accent }, { value: aiMsgs, color: accent2 }, { value: imgMsgs, color: "#10b981" }]} size={80} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: "0.78rem" }}>
+              <div style={{ display: "flex", gap: 8 }}><span style={{ color: accent }}>●</span><span style={{ color: c.text }}>You: {userMsgs}</span></div>
+              <div style={{ display: "flex", gap: 8 }}><span style={{ color: accent2 }}>●</span><span style={{ color: c.text }}>Aura: {aiMsgs}</span></div>
+              <div style={{ display: "flex", gap: 8 }}><span style={{ color: "#10b981" }}>●</span><span style={{ color: c.text }}>Images: {imgMsgs}</span></div>
             </div>
           </div>
-          {sessionData.length > 0 && <div style={{ background: c.card, borderRadius: 16, padding: "20px", border: `1px solid ${c.border}` }}><BarChart data={sessionData} color={accent2} label="Messages per Conversation" /></div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Game Dev Mode Panel ───────────────────────────────────────────────────────
+function GameDevPanel({ dark, accent, accent2, onPrompt, onClose }) {
+  const c = { surface: dark ? "#161628" : "#fff", card: dark ? "#1e1e2e" : "#f5f5f7", border: dark ? "#2a2a40" : "#e8e8f0", text: dark ? "#e8e6f0" : "#1a1a2e", muted: dark ? "#666680" : "#9090a0" };
+  const [engine, setEngine] = useState("Unity");
+  const [customPrompt, setCustomPrompt] = useState("");
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
+      <div style={{ background: c.surface, borderRadius: 24, width: "95vw", maxWidth: 680, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid #10b98133`, animation: "fadeUp 0.3s ease" }}>
+        {/* Header */}
+        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${c.border}`, background: "linear-gradient(135deg, #10b98122, #34d39911)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 14, background: "linear-gradient(135deg, #10b981, #34d399)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>🎮</div>
+              <div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.2rem", color: c.text }}>Game Dev Assistant</div>
+                <div style={{ fontSize: "0.75rem", color: "#10b981" }}>Unity · Unreal · Godot · Expert Mode</div>
+              </div>
+            </div>
+            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ overflowY: "auto", padding: "20px 24px" }}>
+          {/* Engine selector */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: "0.72rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>Select Engine</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {["Unity", "Unreal Engine", "Godot", "GameMaker", "Pygame"].map(e => (
+                <button key={e} onClick={() => setEngine(e)}
+                  style={{ padding: "8px 16px", borderRadius: 20, border: `1px solid ${engine === e ? "#10b981" : c.border}`, background: engine === e ? "#10b98122" : "transparent", color: engine === e ? "#10b981" : c.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.82rem", fontWeight: engine === e ? 600 : 400, transition: "all 0.15s" }}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick prompts */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: "0.72rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>Quick Actions</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+              {GAME_PROMPTS.map(p => (
+                <button key={p.label} onClick={() => { onPrompt(`[${engine}] ${p.prompt}`, true); onClose(); }}
+                  style={{ padding: "12px 14px", borderRadius: 14, border: `1px solid ${c.border}`, background: c.card, color: c.text, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.82rem", textAlign: "left", transition: "all 0.15s", display: "flex", alignItems: "center", gap: 8 }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "#10b981"; e.currentTarget.style.background = "#10b98115"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.background = c.card; }}>
+                  <span style={{ fontSize: "1.1rem" }}>{p.icon}</span>
+                  <span>{p.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom prompt */}
+          <div>
+            <div style={{ fontSize: "0.72rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>Custom Question</div>
+            <textarea value={customPrompt} onChange={e => setCustomPrompt(e.target.value)}
+              placeholder={`Ask anything about ${engine}...\ne.g. "How do I add physics to my player character?"\ne.g. "Debug: my enemy stops chasing the player after 5 seconds"`}
+              rows={3}
+              style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.88rem", lineHeight: 1.6, outline: "none", boxSizing: "border-box", resize: "none" }}
+              onFocus={e => e.target.style.borderColor = "#10b981"} onBlur={e => e.target.style.borderColor = c.border} />
+            <button onClick={() => { if (customPrompt.trim()) { onPrompt(`[${engine} Game Dev] ${customPrompt}`, true); setCustomPrompt(""); onClose(); } }}
+              disabled={!customPrompt.trim()}
+              style={{ marginTop: 10, width: "100%", padding: "12px", borderRadius: 12, border: "none", cursor: customPrompt.trim() ? "pointer" : "not-allowed", background: "linear-gradient(135deg, #10b981, #34d399)", color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.9rem", opacity: customPrompt.trim() ? 1 : 0.5 }}>
+              🎮 Ask Game Dev AI
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -344,20 +379,33 @@ export default function AuraAI() {
   const [showThemes, setShowThemes] = useState(false);
   const [showImageGen, setShowImageGen] = useState(false);
   const [showWebSum, setShowWebSum] = useState(false);
+  const [showVideoGen, setShowVideoGen] = useState(false);
+  const [showGameDev, setShowGameDev] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
   const [imagePrompt, setImagePrompt] = useState("");
+  const [videoPrompt, setVideoPrompt] = useState("");
   const [webUrl, setWebUrl] = useState("");
   const [imageLoading, setImageLoading] = useState(false);
+  const [videoLoading, setVideoLoading] = useState(false);
   const [webLoading, setWebLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [latestMsgId, setLatestMsgId] = useState(null);
   const [typingDone, setTypingDone] = useState(true);
   const [totalTokens, setTotalTokens] = useState(0);
   const [totalMessages, setTotalMessages] = useState(0);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const theme = THEMES[themeName];
   const { accent, accent2 } = theme;
+
+  // Detect mobile
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => { localStorage.setItem("aura_users", JSON.stringify(users)); }, [users]);
   useEffect(() => { if (currentUser) localStorage.setItem("aura_current_user", currentUser); else localStorage.removeItem("aura_current_user"); }, [currentUser]);
@@ -387,30 +435,35 @@ export default function AuraAI() {
     setAuthError("");
   };
 
-  const newSession = () => { const id = generateId(); setSessions(s => ({ ...s, [id]: { id, title: "New Chat", messages: [], createdAt: Date.now() } })); setActiveSession(id); };
-  const deleteSession = (id) => {
-    setSessions(s => { const n = { ...s }; delete n[id]; return n; });
-    if (activeSession === id) { const rem = Object.keys(sessions).filter(k => k !== id); setActiveSession(rem[0] || null); if (rem.length === 0) newSession(); }
-  };
+  const newSession = () => { const id = generateId(); setSessions(s => ({ ...s, [id]: { id, title: "New Chat", messages: [], createdAt: Date.now() } })); setActiveSession(id); if (isMobile) setSidebarOpen(false); };
+  const deleteSession = (id) => { setSessions(s => { const n = { ...s }; delete n[id]; return n; }); if (activeSession === id) { const rem = Object.keys(sessions).filter(k => k !== id); setActiveSession(rem[0] || null); if (rem.length === 0) newSession(); } };
   const updateSessionTitle = (id, messages) => { if (messages.length === 1) { const title = messages[0].content.slice(0, 40) + (messages[0].content.length > 40 ? "…" : ""); setSessions(s => ({ ...s, [id]: { ...s[id], title } })); } };
   const handleReact = (msgId, emoji) => { setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: s[activeSession].messages.map(m => m.id === msgId ? { ...m, reactions: [...(m.reactions || []), emoji] } : m) } })); };
 
-  const sendMessage = async () => {
-    const text = input.trim(); if (!text || loading || !typingDone) return; setInput("");
+  const sendMessage = async (text, isGameDev = false) => {
+    if (!text || loading || !typingDone) return;
+    setInput("");
     const userMsg = { id: generateId(), role: "user", content: text, ts: Date.now() };
     const updatedMessages = [...currentMessages, userMsg];
     setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: updatedMessages } }));
     updateSessionTitle(activeSession, updatedMessages); setLoading(true); setTypingDone(false);
     try {
       const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` }, body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1000, messages: [{ role: "system", content: systemPrompt }, ...updatedMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }))] }) });
+      const gameDevSystem = `You are an expert game developer assistant specializing in Unity, Unreal Engine, Godot, and other game engines. You provide detailed code snippets, explain implementation steps clearly, suggest creative game design ideas, help debug errors, generate enemy AI logic, dialogue scripts, and game mechanics. Always format code properly with syntax highlighting markers. Be technical, precise, and practical.`;
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+        body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1500, messages: [{ role: "system", content: isGameDev ? gameDevSystem : systemPrompt }, ...updatedMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }))] })
+      });
       const data = await res.json();
       const fullText = data?.choices?.[0]?.message?.content || data?.error?.message || "I couldn't process that — please try again.";
-      const aiMsg = { id: generateId(), role: "assistant", content: fullText, ts: Date.now() };
+      const aiMsg = { id: generateId(), role: "assistant", content: fullText, ts: Date.now(), isGameDev };
       setLatestMsgId(aiMsg.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
-    } catch { const errMsg = { id: generateId(), role: "assistant", content: "⚠️ Network error.", ts: Date.now() }; setLatestMsgId(errMsg.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, errMsg] } })); }
+    } catch { const e = { id: generateId(), role: "assistant", content: "⚠️ Network error.", ts: Date.now() }; setLatestMsgId(e.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } })); }
     finally { setLoading(false); }
   };
+
+  const handleSend = () => { const text = input.trim(); if (text) sendMessage(text, false); };
 
   const generateImage = async () => {
     if (!imagePrompt.trim()) return; setImageLoading(true);
@@ -428,6 +481,23 @@ export default function AuraAI() {
     finally { setImageLoading(false); setTypingDone(true); }
   };
 
+  // Video generation using Pollinations video API
+  const generateVideo = async () => {
+    if (!videoPrompt.trim()) return; setVideoLoading(true); setTypingDone(false);
+    const userMsg = { id: generateId(), role: "user", content: `🎬 Generate video: ${videoPrompt}`, ts: Date.now() };
+    const updatedMessages = [...currentMessages, userMsg];
+    setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: updatedMessages } }));
+    updateSessionTitle(activeSession, updatedMessages);
+    try {
+      // Use Pollinations text-to-video
+      const videoUrl = `https://v.pollinations.ai/${encodeURIComponent(videoPrompt)}?seed=${Math.floor(Math.random() * 99999)}&nologo=true`;
+      const aiMsg = { id: generateId(), role: "assistant", content: `Here's your generated video for: "${videoPrompt}"\n\nNote: Video may take a moment to load.`, videoUrl, ts: Date.now() };
+      setLatestMsgId(aiMsg.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+      setVideoPrompt(""); setShowVideoGen(false);
+    } catch { const e = { id: generateId(), role: "assistant", content: "⚠️ Could not generate video. Please try again.", ts: Date.now() }; setLatestMsgId(e.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } })); }
+    finally { setVideoLoading(false); setTypingDone(true); }
+  };
+
   const summarizeWebsite = async () => {
     if (!webUrl.trim()) return; setWebLoading(true); setTypingDone(false);
     const userMsg = { id: generateId(), role: "user", content: `🌐 Summarize: ${webUrl}`, ts: Date.now() };
@@ -436,7 +506,7 @@ export default function AuraAI() {
     updateSessionTitle(activeSession, updatedMessages);
     try {
       const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` }, body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1000, messages: [{ role: "system", content: "You are a helpful assistant that summarizes websites. Given a URL, provide a detailed summary of what the website is about, its purpose, key features, and content." }, { role: "user", content: `Summarize: ${webUrl}` }] }) });
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` }, body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1000, messages: [{ role: "system", content: "You are a helpful assistant that summarizes websites. Given a URL, provide a detailed summary." }, { role: "user", content: `Summarize: ${webUrl}` }] }) });
       const data = await res.json();
       const fullText = data?.choices?.[0]?.message?.content || "Could not summarize.";
       const aiMsg = { id: generateId(), role: "assistant", content: fullText, ts: Date.now() };
@@ -454,25 +524,25 @@ export default function AuraAI() {
   };
 
   const exportAsText = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([currentMessages.map(m => `[${m.role === "user" ? "You" : "Aura"}] ${formatTime(m.ts)}\n${m.content}`).join("\n\n---\n\n")], { type: "text/plain" })); a.download = `aura-chat-${Date.now()}.txt`; a.click(); };
-  const exportAsPDF = () => { const w = window.open("", "_blank"); w.document.write(`<html><head><title>Aura Chat</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#1a1a2e}.msg{margin-bottom:2rem;padding:1rem;border-radius:8px}.user{background:#f0f0ff}.assistant{background:#f9f9f9}.label{font-weight:bold;font-size:0.8rem;color:#666;margin-bottom:6px}pre{white-space:pre-wrap;font-family:inherit}</style></head><body><h1>✦ Aura AI Chat Export</h1>${currentMessages.map(m => `<div class="msg ${m.role}"><div class="label">${m.role === "user" ? "You" : "Aura"} · ${formatTime(m.ts)}</div><pre>${m.content}</pre></div>`).join("")}</body></html>`); w.document.close(); w.print(); };
+  const exportAsPDF = () => { const w = window.open("", "_blank"); w.document.write(`<html><head><title>Aura Chat</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#1a1a2e}.msg{margin-bottom:2rem;padding:1rem;border-radius:8px}.user{background:#f0f0ff}.assistant{background:#f9f9f9}.label{font-weight:bold;font-size:0.8rem;color:#666;margin-bottom:6px}pre{white-space:pre-wrap;font-family:inherit}</style></head><body><h1>✦ Aura AI Chat</h1>${currentMessages.map(m => `<div class="msg ${m.role}"><div class="label">${m.role === "user" ? "You" : "Aura"} · ${formatTime(m.ts)}</div><pre>${m.content}</pre></div>`).join("")}</body></html>`); w.document.close(); w.print(); };
 
+  // ── Login Screen ────────────────────────────────────────────────────────────
   if (!currentUser) {
     return (
       <>
         <style>{FONTS}{`@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}@keyframes blink{50%{opacity:0}}*{box-sizing:border-box;margin:0;padding:0}`}</style>
-        <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${theme.darkBg} 0%, ${theme.darkCard} 50%, #0d1a2e 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif" }}>
-          <div style={{ position: "fixed", width: 400, height: 400, borderRadius: "50%", background: `radial-gradient(circle, ${accent}22 0%, transparent 70%)`, top: "10%", left: "20%", pointerEvents: "none" }} />
-          <div style={{ position: "fixed", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${accent2}22 0%, transparent 70%)`, bottom: "15%", right: "15%", pointerEvents: "none" }} />
-          <div style={{ animation: "fadeUp 0.6s ease", background: theme.darkSurface, borderRadius: 24, padding: "48px 40px", width: 380, boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: "1px solid #2a2a40" }}>
-            <div style={{ textAlign: "center", marginBottom: 36 }}>
+        <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${theme.darkBg} 0%, ${theme.darkCard} 50%, #0d1a2e 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif", padding: 16 }}>
+          <div style={{ position: "fixed", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${accent}22 0%, transparent 70%)`, top: "10%", left: "10%", pointerEvents: "none" }} />
+          <div style={{ animation: "fadeUp 0.6s ease", background: theme.darkSurface, borderRadius: 24, padding: "40px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: "1px solid #2a2a40" }}>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
               <div style={{ fontSize: "2.5rem", marginBottom: 8 }}>✦</div>
-              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", color: "#e8e6f0" }}>Aura AI</h1>
-              <p style={{ color: "#666680", fontSize: "0.88rem", marginTop: 6 }}>Your intelligent companion</p>
+              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.8rem", color: "#e8e6f0" }}>Aura AI</h1>
+              <p style={{ color: "#666680", fontSize: "0.85rem", marginTop: 6 }}>Your intelligent companion</p>
             </div>
-            <div style={{ display: "flex", background: "#0d0d1a", borderRadius: 12, padding: 4, marginBottom: 28 }}>
-              {["login", "register"].map(m => <button key={m} onClick={() => { setAuthMode(m); setAuthError(""); }} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 500, fontSize: "0.88rem", transition: "all 0.2s", background: authMode === m ? accent : "transparent", color: authMode === m ? "#fff" : "#666680" }}>{m === "login" ? "Sign In" : "Create Account"}</button>)}
+            <div style={{ display: "flex", background: "#0d0d1a", borderRadius: 12, padding: 4, marginBottom: 24 }}>
+              {["login", "register"].map(m => <button key={m} onClick={() => { setAuthMode(m); setAuthError(""); }} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 500, fontSize: "0.88rem", transition: "all 0.2s", background: authMode === m ? accent : "transparent", color: authMode === m ? "#fff" : "#666680" }}>{m === "login" ? "Sign In" : "Register"}</button>)}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {["username", "password"].map(field => <input key={field} type={field === "password" ? "password" : "text"} placeholder={field === "username" ? "Username" : "Password"} value={authForm[field]} onChange={e => setAuthForm(f => ({ ...f, [field]: e.target.value }))} onKeyDown={e => e.key === "Enter" && handleAuth()} style={{ padding: "13px 16px", borderRadius: 12, border: "1px solid #2a2a40", background: "#0d0d1a", color: "#e8e6f0", fontFamily: "'DM Sans', sans-serif", fontSize: "0.9rem", outline: "none" }} onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = "#2a2a40"} />)}
               {authError && <div style={{ color: "#f87171", fontSize: "0.82rem", textAlign: "center" }}>{authError}</div>}
               <button onClick={handleAuth} style={{ marginTop: 4, padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.95rem" }}>{authMode === "login" ? "Sign In →" : "Create Account →"}</button>
@@ -483,110 +553,201 @@ export default function AuraAI() {
     );
   }
 
+  const sidebarContent = (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: c.sidebar }}>
+      {/* Logo */}
+      <div style={{ padding: "20px 16px", borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9rem", color: "#fff" }}>✦</div>
+          <div><div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1rem", color: c.text }}>Aura AI</div><div style={{ fontSize: "0.68rem", color: c.muted }}>@{currentUser}</div></div>
+        </div>
+        {isMobile && <button onClick={() => setSidebarOpen(false)} style={{ background: "none", border: "none", color: c.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>}
+      </div>
+
+      {/* Quick tools */}
+      <div style={{ padding: "10px 12px", borderBottom: `1px solid ${c.border}`, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {[{ icon: "🖼️", title: "Image", action: () => { setShowImageGen(v => !v); setShowWebSum(false); setShowVideoGen(false); } },
+          { icon: "🎬", title: "Video", action: () => { setShowVideoGen(v => !v); setShowImageGen(false); setShowWebSum(false); } },
+          { icon: "🌐", title: "Web", action: () => { setShowWebSum(v => !v); setShowImageGen(false); setShowVideoGen(false); } },
+          { icon: "🎮", title: "Game Dev", action: () => { setShowGameDev(true); if (isMobile) setSidebarOpen(false); } },
+          { icon: "🎨", title: "Themes", action: () => setShowThemes(v => !v) },
+        ].map(({ icon, title, action }) => (
+          <button key={title} onClick={action} title={title} style={{ flex: "1 1 auto", padding: "7px 4px", borderRadius: 10, border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "0.9rem", transition: "all 0.15s", minWidth: 36, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
+            onMouseEnter={e => { e.currentTarget.style.background = c.accentLight; e.currentTarget.style.borderColor = accent; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = c.border; }}>
+            <span>{icon}</span>
+            <span style={{ fontSize: "0.55rem" }}>{title}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Theme picker */}
+      {showThemes && (
+        <div style={{ padding: "10px 14px", borderBottom: `1px solid ${c.border}` }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {Object.entries(THEMES).map(([key, t]) => <button key={key} onClick={() => { setThemeName(key); setShowThemes(false); }} title={t.name} style={{ width: 26, height: 26, borderRadius: "50%", background: `linear-gradient(135deg, ${t.accent}, ${t.accent2})`, border: themeName === key ? "3px solid white" : "3px solid transparent", cursor: "pointer", boxShadow: themeName === key ? `0 0 0 2px ${t.accent}` : "none" }} />)}
+          </div>
+        </div>
+      )}
+
+      {/* New chat */}
+      <div style={{ padding: "8px 12px" }}>
+        <button onClick={newSession} style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: `1px dashed ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.color = accent2; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.color = c.muted; }}>
+          <span>+</span> New conversation
+        </button>
+      </div>
+
+      {/* Sessions */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 10px" }}>
+        <div style={{ fontSize: "0.65rem", color: c.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", padding: "6px 4px" }}>Conversations</div>
+        {Object.values(sessions).sort((a, b) => b.createdAt - a.createdAt).map(s => (
+          <div key={s.id} onClick={() => { setActiveSession(s.id); if (isMobile) setSidebarOpen(false); }}
+            style={{ padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 2, display: "flex", alignItems: "center", justifyContent: "space-between", background: activeSession === s.id ? c.accentLight : "transparent", borderLeft: activeSession === s.id ? `2px solid ${accent}` : "2px solid transparent", transition: "all 0.15s" }}>
+            <div style={{ fontSize: "0.8rem", color: activeSession === s.id ? accent2 : c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{s.title}</div>
+            <button onClick={e => { e.stopPropagation(); deleteSession(s.id); }} style={{ opacity: 0, background: "none", border: "none", cursor: "pointer", color: c.muted, fontSize: "0.75rem", padding: "0 2px", flexShrink: 0 }}
+              ref={r => { if (r) { r.parentElement.onmouseenter = () => r.style.opacity = "1"; r.parentElement.onmouseleave = () => r.style.opacity = "0"; } }}>✕</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer actions */}
+      <div style={{ padding: "10px 12px", borderTop: `1px solid ${c.border}` }}>
+        {[{ icon: "📊", label: "Dashboard", action: () => { setShowDashboard(true); if (isMobile) setSidebarOpen(false); } },
+          { icon: "👑", label: "Admin", action: () => { setShowAdmin(true); if (isMobile) setSidebarOpen(false); } },
+          { icon: "⚙️", label: "Settings", action: () => setShowSettings(v => !v) },
+          { icon: "↗️", label: "Export", action: () => setShowExport(v => !v) },
+          { icon: "🚪", label: "Sign Out", action: () => setCurrentUser(null) },
+        ].map(({ icon, label, action }) => (
+          <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: "none", background: "transparent", color: c.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.8rem", width: "100%", transition: "all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.background = c.accentLight; e.currentTarget.style.color = accent2; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = c.muted; }}>
+            <span>{icon}</span>{label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      <style>{FONTS}{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes blink{50%{opacity:0}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2a40;border-radius:4px}textarea{resize:none}`}</style>
+      <style>{FONTS}{`
+        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes blink{50%{opacity:0}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}@keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes slideIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2a40;border-radius:4px}
+        textarea{resize:none}
+      `}</style>
 
       {showAdmin && <AdminPanel users={users} dark={dark} accent={accent} accent2={accent2} onClose={() => setShowAdmin(false)} />}
       {showDashboard && <ChartsDashboard sessions={sessions} dark={dark} accent={accent} accent2={accent2} totalMessages={totalMessages} totalTokens={totalTokens} onClose={() => setShowDashboard(false)} />}
+      {showGameDev && <GameDevPanel dark={dark} accent={accent} accent2={accent2} onPrompt={(text, isGD) => sendMessage(text, isGD)} onClose={() => setShowGameDev(false)} />}
 
-      <div style={{ display: "flex", height: "100vh", background: c.bg, color: c.text, fontFamily: "'DM Sans', sans-serif", overflow: "hidden", transition: "background 0.3s" }}>
-        <div style={{ width: 260, background: c.sidebar, borderRight: `1px solid ${c.border}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-          <div style={{ padding: "24px 20px 20px", borderBottom: `1px solid ${c.border}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", color: "#fff", fontWeight: 700 }}>✦</div>
-              <div><div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", fontWeight: 700, color: c.text }}>Aura AI</div><div style={{ fontSize: "0.7rem", color: c.muted }}>@{currentUser}</div></div>
-            </div>
-          </div>
-          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${c.border}`, display: "flex", gap: 6 }}>
-            {[{ icon: "🖼️", title: "Image Gen", action: () => { setShowImageGen(v => !v); setShowWebSum(false); } }, { icon: "🌐", title: "Web Summary", action: () => { setShowWebSum(v => !v); setShowImageGen(false); } }, { icon: "🎨", title: "Themes", action: () => setShowThemes(v => !v) }].map(({ icon, title, action }) => (
-              <button key={title} onClick={action} title={title} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "1rem", transition: "all 0.15s" }} onMouseEnter={e => { e.currentTarget.style.background = c.accentLight; e.currentTarget.style.borderColor = accent; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = c.border; }}>{icon}</button>
-            ))}
-          </div>
-          {showThemes && (
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${c.border}`, animation: "fadeUp 0.2s ease" }}>
-              <div style={{ fontSize: "0.68rem", color: c.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Choose Theme</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {Object.entries(THEMES).map(([key, t]) => <button key={key} onClick={() => { setThemeName(key); setShowThemes(false); }} title={t.name} style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg, ${t.accent}, ${t.accent2})`, border: themeName === key ? "3px solid white" : "3px solid transparent", cursor: "pointer", transition: "transform 0.15s", boxShadow: themeName === key ? `0 0 0 2px ${t.accent}` : "none" }} onMouseEnter={e => e.currentTarget.style.transform = "scale(1.2)"} onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"} />)}
-              </div>
-              <div style={{ fontSize: "0.72rem", color: c.muted, marginTop: 6 }}>{theme.name}</div>
-            </div>
-          )}
-          <div style={{ padding: "8px 16px" }}>
-            <button onClick={newSession} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: `1px dashed ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.color = accent2; }} onMouseLeave={e => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.color = c.muted; }}>
-              <span>+</span> New conversation
-            </button>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "0 12px" }}>
-            <div style={{ fontSize: "0.68rem", color: c.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", padding: "8px 4px 6px" }}>Conversations</div>
-            {Object.values(sessions).sort((a, b) => b.createdAt - a.createdAt).map(s => (
-              <div key={s.id} onClick={() => setActiveSession(s.id)} style={{ padding: "9px 12px", borderRadius: 10, cursor: "pointer", marginBottom: 2, display: "flex", alignItems: "center", justifyContent: "space-between", background: activeSession === s.id ? c.accentLight : "transparent", borderLeft: activeSession === s.id ? `2px solid ${accent}` : "2px solid transparent", transition: "all 0.15s" }}>
-                <div style={{ fontSize: "0.82rem", color: activeSession === s.id ? accent2 : c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{s.title}</div>
-                <button onClick={e => { e.stopPropagation(); deleteSession(s.id); }} style={{ opacity: 0, background: "none", border: "none", cursor: "pointer", color: c.muted, fontSize: "0.8rem", padding: "0 2px" }} ref={r => { if (r) { r.parentElement.onmouseenter = () => r.style.opacity = "1"; r.parentElement.onmouseleave = () => r.style.opacity = "0"; } }}>✕</button>
-              </div>
-            ))}
-          </div>
-          <div style={{ padding: "12px 16px", borderTop: `1px solid ${c.border}`, display: "flex", flexDirection: "column", gap: 2 }}>
-            {[{ icon: "📊", label: "Dashboard", action: () => setShowDashboard(true) }, { icon: "👑", label: "Admin Panel", action: () => setShowAdmin(true) }, { icon: "⚙️", label: "Settings", action: () => setShowSettings(v => !v) }, { icon: "↗️", label: "Export Chat", action: () => setShowExport(v => !v) }, { icon: "🚪", label: "Sign Out", action: () => setCurrentUser(null) }].map(({ icon, label, action }) => (
-              <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "none", background: "transparent", color: c.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.83rem", textAlign: "left", transition: "all 0.15s", width: "100%" }} onMouseEnter={e => { e.currentTarget.style.background = c.accentLight; e.currentTarget.style.color = accent2; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = c.muted; }}>
-                <span>{icon}</span> {label}
-              </button>
-            ))}
-          </div>
+      {/* Mobile overlay */}
+      {isMobile && sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 99, backdropFilter: "blur(2px)" }} />
+      )}
+
+      <div style={{ display: "flex", height: "100vh", background: c.bg, color: c.text, fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
+
+        {/* Sidebar — desktop always visible, mobile slide-in */}
+        <div style={{
+          width: 240, flexShrink: 0, borderRight: `1px solid ${c.border}`,
+          ...(isMobile ? { position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 100, transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform 0.3s ease", boxShadow: sidebarOpen ? "4px 0 20px rgba(0,0,0,0.3)" : "none" } : {})
+        }}>
+          {sidebarContent}
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ height: 60, borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: c.surface, flexShrink: 0 }}>
-            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1rem", color: c.text }}>{sessions[activeSession]?.title || "New Chat"}</div>
+        {/* Main chat */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+
+          {/* Top bar */}
+          <div style={{ height: 56, borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: c.surface, flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: "0.75rem", color: c.muted, background: c.accentLight, padding: "4px 10px", borderRadius: 20, fontFamily: "'JetBrains Mono', monospace" }}>~{totalTokens.toLocaleString()} tokens</div>
-              <button onClick={() => setDark(v => !v)} style={{ width: 40, height: 40, borderRadius: 12, border: `1px solid ${c.border}`, background: "transparent", cursor: "pointer", fontSize: "1.1rem", display: "flex", alignItems: "center", justifyContent: "center", color: c.text, transition: "all 0.2s" }} onMouseEnter={e => e.currentTarget.style.background = c.accentLight} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{dark ? "☀️" : "🌙"}</button>
+              {isMobile && (
+                <button onClick={() => setSidebarOpen(true)} style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${c.border}`, background: "transparent", cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", color: c.text }}>☰</button>
+              )}
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "0.95rem", color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? 160 : 300 }}>{sessions[activeSession]?.title || "New Chat"}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {!isMobile && <div style={{ fontSize: "0.72rem", color: c.muted, background: c.accentLight, padding: "3px 8px", borderRadius: 20, fontFamily: "'JetBrains Mono', monospace" }}>~{totalTokens.toLocaleString()}t</div>}
+              <button onClick={() => setShowGameDev(true)} style={{ padding: "6px 10px", borderRadius: 10, border: `1px solid #10b98144`, background: "#10b98115", cursor: "pointer", fontSize: "0.78rem", color: "#10b981", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, whiteSpace: "nowrap" }}>🎮 Game Dev</button>
+              <button onClick={() => setDark(v => !v)} style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${c.border}`, background: "transparent", cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", color: c.text }}>{dark ? "☀️" : "🌙"}</button>
             </div>
           </div>
 
+          {/* Tool panels */}
           {showImageGen && (
-            <div style={{ padding: "16px 24px", background: c.surface, borderBottom: `1px solid ${c.border}`, animation: "fadeUp 0.2s ease" }}>
-              <div style={{ fontSize: "0.78rem", color: c.muted, marginBottom: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>🖼️ AI Image Generation</div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <input value={imagePrompt} onChange={e => setImagePrompt(e.target.value)} onKeyDown={e => e.key === "Enter" && generateImage()} placeholder="Describe your image…" style={{ flex: 1, padding: "10px 14px", borderRadius: 12, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.88rem", outline: "none" }} onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = c.border} />
-                <button onClick={generateImage} disabled={imageLoading || !imagePrompt.trim()} style={{ padding: "10px 20px", borderRadius: 12, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.85rem", opacity: imagePrompt.trim() && !imageLoading ? 1 : 0.5, whiteSpace: "nowrap" }}>{imageLoading ? "Generating…" : "✨ Generate"}</button>
+            <div style={{ padding: "12px 16px", background: c.surface, borderBottom: `1px solid ${c.border}` }}>
+              <div style={{ fontSize: "0.72rem", color: c.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase" }}>🖼️ Image Generation</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={imagePrompt} onChange={e => setImagePrompt(e.target.value)} onKeyDown={e => e.key === "Enter" && generateImage()} placeholder="Describe your image…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", outline: "none", minWidth: 0 }} onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = c.border} />
+                <button onClick={generateImage} disabled={imageLoading || !imagePrompt.trim()} style={{ padding: "9px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.82rem", opacity: imagePrompt.trim() && !imageLoading ? 1 : 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>{imageLoading ? "…" : "✨ Generate"}</button>
               </div>
             </div>
           )}
+
+          {showVideoGen && (
+            <div style={{ padding: "12px 16px", background: c.surface, borderBottom: `1px solid ${c.border}` }}>
+              <div style={{ fontSize: "0.72rem", color: c.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase" }}>🎬 Video Generation</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} onKeyDown={e => e.key === "Enter" && generateVideo()} placeholder="Describe your video… e.g. 'a sunset over mountains'" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", outline: "none", minWidth: 0 }} onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = c.border} />
+                <button onClick={generateVideo} disabled={videoLoading || !videoPrompt.trim()} style={{ padding: "9px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: `linear-gradient(135deg, #f43f5e, #fb7185)`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.82rem", opacity: videoPrompt.trim() && !videoLoading ? 1 : 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>{videoLoading ? "…" : "🎬 Generate"}</button>
+              </div>
+              <div style={{ fontSize: "0.7rem", color: c.muted, marginTop: 6 }}>Powered by Pollinations AI · Free · No API key needed</div>
+            </div>
+          )}
+
           {showWebSum && (
-            <div style={{ padding: "16px 24px", background: c.surface, borderBottom: `1px solid ${c.border}`, animation: "fadeUp 0.2s ease" }}>
-              <div style={{ fontSize: "0.78rem", color: c.muted, marginBottom: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>🌐 Website Summarizer</div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <input value={webUrl} onChange={e => setWebUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && summarizeWebsite()} placeholder="Paste any URL…" style={{ flex: 1, padding: "10px 14px", borderRadius: 12, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.88rem", outline: "none" }} onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = c.border} />
-                <button onClick={summarizeWebsite} disabled={webLoading || !webUrl.trim()} style={{ padding: "10px 20px", borderRadius: 12, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.85rem", opacity: webUrl.trim() && !webLoading ? 1 : 0.5, whiteSpace: "nowrap" }}>{webLoading ? "Reading…" : "🌐 Summarize"}</button>
+            <div style={{ padding: "12px 16px", background: c.surface, borderBottom: `1px solid ${c.border}` }}>
+              <div style={{ fontSize: "0.72rem", color: c.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase" }}>🌐 Website Summarizer</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={webUrl} onChange={e => setWebUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && summarizeWebsite()} placeholder="Paste any URL…" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", outline: "none", minWidth: 0 }} onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = c.border} />
+                <button onClick={summarizeWebsite} disabled={webLoading || !webUrl.trim()} style={{ padding: "9px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.82rem", opacity: webUrl.trim() && !webLoading ? 1 : 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>{webLoading ? "…" : "🌐 Go"}</button>
               </div>
             </div>
           )}
+
           {showSettings && (
-            <div style={{ padding: "20px 24px", background: c.surface, borderBottom: `1px solid ${c.border}`, animation: "fadeUp 0.2s ease" }}>
-              <div style={{ fontSize: "0.78rem", color: c.muted, marginBottom: 8, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Custom AI Personality</div>
-              <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={3} style={{ width: "100%", background: dark ? "#0d0d1a" : "#f5f5f7", border: `1px solid ${c.border}`, borderRadius: 12, padding: "12px 14px", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", lineHeight: 1.6, outline: "none" }} />
+            <div style={{ padding: "12px 16px", background: c.surface, borderBottom: `1px solid ${c.border}` }}>
+              <div style={{ fontSize: "0.72rem", color: c.muted, marginBottom: 6, fontWeight: 600, textTransform: "uppercase" }}>AI Personality</div>
+              <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={2} style={{ width: "100%", background: dark ? "#0d0d1a" : "#f5f5f7", border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.83rem", lineHeight: 1.5, outline: "none" }} />
             </div>
           )}
+
           {showExport && (
-            <div style={{ padding: "16px 24px", background: c.surface, borderBottom: `1px solid ${c.border}`, display: "flex", gap: 12, animation: "fadeUp 0.2s ease" }}>
-              <div style={{ fontSize: "0.78rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginRight: 8, alignSelf: "center" }}>Export:</div>
+            <div style={{ padding: "10px 16px", background: c.surface, borderBottom: `1px solid ${c.border}`, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.72rem", color: c.muted, fontWeight: 600, textTransform: "uppercase" }}>Export:</span>
               {[{ label: "📄 PDF", action: exportAsPDF }, { label: "📝 Text", action: exportAsText }].map(({ label, action }) => (
-                <button key={label} onClick={action} style={{ padding: "8px 16px", borderRadius: 10, border: `1px solid ${c.border}`, background: "transparent", color: c.text, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.83rem", transition: "all 0.15s" }} onMouseEnter={e => { e.currentTarget.style.background = accent; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = accent; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = c.text; e.currentTarget.style.borderColor = c.border; }}>{label}</button>
+                <button key={label} onClick={action} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${c.border}`, background: "transparent", color: c.text, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.8rem" }}>{label}</button>
               ))}
             </div>
           )}
 
-          <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 4 }}>
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 12px" : "20px 24px", display: "flex", flexDirection: "column", gap: 4 }}>
             {currentMessages.length === 0 && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "fadeUp 0.5s ease" }}>
-                <div style={{ fontSize: "3rem", marginBottom: 16, opacity: 0.3 }}>✦</div>
-                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", color: c.text, marginBottom: 8, opacity: 0.7 }}>How can I help you today?</div>
-                <div style={{ fontSize: "0.85rem", color: c.muted, maxWidth: 400, textAlign: "center", lineHeight: 1.6 }}>Chat · Images · Web Summary · Dashboard · Admin</div>
-                <div style={{ display: "flex", gap: 10, marginTop: 28, flexWrap: "wrap", justifyContent: "center" }}>
-                  {["✍️ Write a poem about the stars", "🖼️ A dragon flying over mountains", "🌐 https://github.com", "💡 Explain black holes simply"].map(p => (
-                    <button key={p} onClick={() => { if (p.startsWith("🖼️")) { setImagePrompt(p.slice(3)); setShowImageGen(true); } else if (p.startsWith("🌐")) { setWebUrl(p.slice(3)); setShowWebSum(true); } else setInput(p.slice(3)); }} style={{ padding: "9px 16px", borderRadius: 20, border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.8rem", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.color = accent2; }} onMouseLeave={e => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.color = c.muted; }}>{p}</button>
-                  ))}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "fadeUp 0.5s ease", padding: "20px 0" }}>
+                <div style={{ fontSize: "2.5rem", marginBottom: 12, opacity: 0.3 }}>✦</div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? "1.2rem" : "1.4rem", color: c.text, marginBottom: 8, opacity: 0.7, textAlign: "center" }}>How can I help you today?</div>
+                <div style={{ fontSize: "0.82rem", color: c.muted, maxWidth: 360, textAlign: "center", lineHeight: 1.6, marginBottom: 20 }}>Chat · Images · Videos · Game Dev · Web Summary</div>
+                {/* Game dev quick prompts on homepage */}
+                <div style={{ width: "100%", maxWidth: 500 }}>
+                  <div style={{ fontSize: "0.72rem", color: "#10b981", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10, textAlign: "center" }}>🎮 Game Dev Quick Start</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 16 }}>
+                    {GAME_PROMPTS.slice(0, 4).map(p => (
+                      <button key={p.label} onClick={() => sendMessage(`[Unity] ${p.prompt}`, true)} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #10b98133", background: "#10b98108", color: c.text, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.78rem", textAlign: "left", display: "flex", alignItems: "center", gap: 6 }}>
+                        <span>{p.icon}</span><span>{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                    {["✍️ Write a poem", "🖼️ A dragon flying", "💡 Explain black holes"].map(p => (
+                      <button key={p} onClick={() => { if (p.startsWith("🖼️")) { setImagePrompt(p.slice(3)); setShowImageGen(true); } else setInput(p.slice(3)); }} style={{ padding: "7px 14px", borderRadius: 16, border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.78rem" }}>{p}</button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -595,26 +756,36 @@ export default function AuraAI() {
                 <MessageBubble msg={msg} dark={dark} onReact={handleReact} isLatest={msg.id === latestMsgId} onTypeDone={() => setTypingDone(true)} accent={accent} accent2={accent2} />
               </div>
             ))}
-            {(loading || imageLoading || webLoading) && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0" }}>
-                <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", color: "#fff" }}>✦</div>
-                <div style={{ display: "flex", gap: 5 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: accent, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }} />)}</div>
-                <div style={{ fontSize: "0.78rem", color: c.muted }}>{imageLoading ? "Generating image…" : webLoading ? "Reading website…" : "Thinking…"}</div>
+            {(loading || imageLoading || videoLoading || webLoading) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
+                <div style={{ width: 26, height: 26, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", color: "#fff" }}>✦</div>
+                <div style={{ display: "flex", gap: 4 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: accent, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }} />)}</div>
+                <div style={{ fontSize: "0.75rem", color: c.muted }}>{imageLoading ? "Generating image…" : videoLoading ? "Generating video…" : webLoading ? "Reading website…" : "Thinking…"}</div>
               </div>
             )}
             <div ref={bottomRef} />
           </div>
 
-          <div style={{ padding: "16px 24px 20px", background: c.surface, borderTop: `1px solid ${c.border}`, flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, background: dark ? "#0d0d1a" : "#f5f5f7", borderRadius: 18, padding: "10px 14px", border: `1px solid ${c.border}`, transition: "border-color 0.2s" }} onFocusCapture={e => e.currentTarget.style.borderColor = accent} onBlurCapture={e => e.currentTarget.style.borderColor = c.border}>
-              <button onClick={toggleVoice} style={{ width: 34, height: 34, borderRadius: 10, border: "none", cursor: "pointer", background: listening ? `${accent}22` : "transparent", color: listening ? accent2 : c.muted, fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: listening ? "pulse 1s infinite" : "none" }}>🎤</button>
-              <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Message Aura… (Shift+Enter for newline)" rows={1} style={{ flex: 1, background: "transparent", border: "none", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.9rem", lineHeight: 1.6, maxHeight: 120, overflowY: "auto", paddingTop: 6, outline: "none" }} />
-              <div style={{ fontSize: "0.68rem", color: c.muted, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0, paddingBottom: 2 }}>~{estimateTokens(input)}t</div>
-              <button onClick={sendMessage} disabled={loading || !input.trim() || !typingDone} style={{ width: 36, height: 36, borderRadius: 11, border: "none", cursor: input.trim() && !loading && typingDone ? "pointer" : "not-allowed", background: input.trim() && !loading && typingDone ? `linear-gradient(135deg, ${accent}, ${accent2})` : (dark ? "#2a2a40" : "#e0e0e8"), color: "#fff", fontSize: "0.9rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", opacity: input.trim() && !loading && typingDone ? 1 : 0.4 }}>
-                {loading ? <div style={{ width: 14, height: 14, border: "2px solid #ffffff44", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> : "↑"}
+          {/* Input bar */}
+          <div style={{ padding: isMobile ? "10px 12px 16px" : "12px 20px 16px", background: c.surface, borderTop: `1px solid ${c.border}`, flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8, background: dark ? "#0d0d1a" : "#f5f5f7", borderRadius: 16, padding: "8px 12px", border: `1px solid ${c.border}`, transition: "border-color 0.2s" }}
+              onFocusCapture={e => e.currentTarget.style.borderColor = accent}
+              onBlurCapture={e => e.currentTarget.style.borderColor = c.border}>
+              <button onClick={toggleVoice} style={{ width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: listening ? `${accent}22` : "transparent", color: listening ? accent2 : c.muted, fontSize: "0.9rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: listening ? "pulse 1s infinite" : "none" }}>🎤</button>
+              <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder="Message Aura…"
+                rows={1}
+                style={{ flex: 1, background: "transparent", border: "none", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.88rem", lineHeight: 1.6, maxHeight: 100, overflowY: "auto", paddingTop: 4, outline: "none", minWidth: 0 }} />
+              {!isMobile && <div style={{ fontSize: "0.65rem", color: c.muted, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0, paddingBottom: 2 }}>~{estimateTokens(input)}t</div>}
+              <button onClick={handleSend} disabled={loading || !input.trim() || !typingDone}
+                style={{ width: 34, height: 34, borderRadius: 10, border: "none", cursor: input.trim() && !loading && typingDone ? "pointer" : "not-allowed", background: input.trim() && !loading && typingDone ? `linear-gradient(135deg, ${accent}, ${accent2})` : (dark ? "#2a2a40" : "#e0e0e8"), color: "#fff", fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", opacity: input.trim() && !loading && typingDone ? 1 : 0.4 }}>
+                {loading ? <div style={{ width: 12, height: 12, border: "2px solid #ffffff44", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> : "↑"}
               </button>
             </div>
-            <div style={{ fontSize: "0.7rem", color: c.muted, textAlign: "center", marginTop: 10 }}>Aura AI · Groq LLaMA 3.3 · 🖼️ Images · 🌐 Web · 🎨 6 Themes · 📊 Charts · 👑 Admin</div>
+            <div style={{ fontSize: "0.65rem", color: c.muted, textAlign: "center", marginTop: 8 }}>
+              Aura AI · 🎮 Game Dev · 🎬 Video · 🖼️ Images · 🌐 Web
+            </div>
           </div>
         </div>
       </div>
