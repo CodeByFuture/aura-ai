@@ -1,5 +1,9 @@
 {
   "appId": "com.auraai.app",
   "appName": "Aura AI",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "url": "https://aura-ai-livid.vercel.app",
+    "cleartext": true
+  }
 }

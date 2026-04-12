@@ -466,36 +466,102 @@ export default function AuraAI() {
   const handleSend = () => { const text = input.trim(); if (text) sendMessage(text, false); };
 
   const generateImage = async () => {
-    if (!imagePrompt.trim()) return; setImageLoading(true);
-    const userMsg = { id: generateId(), role: "user", content: `🎨 Generate: ${imagePrompt}`, ts: Date.now() };
+    if (!imagePrompt.trim()) return;
+    setImageLoading(true); setTypingDone(true); // reset before starting
+    const prompt = imagePrompt;
+    setImagePrompt(""); setShowImageGen(false);
+    const userMsg = { id: generateId(), role: "user", content: `🎨 Generate: ${prompt}`, ts: Date.now() };
     const updatedMessages = [...currentMessages, userMsg];
     setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: updatedMessages } }));
     updateSessionTitle(activeSession, updatedMessages);
     try {
-      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=768&height=512&nologo=true&seed=${Math.floor(Math.random() * 99999)}`;
-      await new Promise((res, rej) => { const img = new Image(); img.onload = res; img.onerror = rej; img.src = imageUrl; });
-      const aiMsg = { id: generateId(), role: "assistant", content: `Here's your image: "${imagePrompt}"`, imageUrl, ts: Date.now() };
-      setLatestMsgId(aiMsg.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
-      setImagePrompt(""); setShowImageGen(false);
-    } catch { const e = { id: generateId(), role: "assistant", content: "⚠️ Could not generate image.", ts: Date.now() }; setLatestMsgId(e.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } })); }
-    finally { setImageLoading(false); setTypingDone(true); }
+      // Try up to 3 different seeds if first fails
+      let imageUrl = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const seed = Math.floor(Math.random() * 999999);
+        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=768&height=512&nologo=true&enhance=true&seed=${seed}`;
+        try {
+          await new Promise((res, rej) => {
+            const img = new Image();
+            img.onload = () => res(url);
+            img.onerror = rej;
+            img.src = url;
+            setTimeout(() => rej(new Error("timeout")), 30000);
+          });
+          imageUrl = url;
+          break;
+        } catch { continue; }
+      }
+      if (!imageUrl) throw new Error("All attempts failed");
+      const aiMsg = { id: generateId(), role: "assistant", content: `Here's your image for: "${prompt}"`, imageUrl, ts: Date.now() };
+      setLatestMsgId(aiMsg.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+    } catch {
+      const e = { id: generateId(), role: "assistant", content: "⚠️ Could not generate image. Please try again with a different prompt.", ts: Date.now() };
+      setLatestMsgId(e.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } }));
+    } finally { setImageLoading(false); }
   };
 
-  // Video generation using Pollinations video API
+  // Video generation using Hugging Face free API (Wan2.1)
   const generateVideo = async () => {
-    if (!videoPrompt.trim()) return; setVideoLoading(true); setTypingDone(false);
-    const userMsg = { id: generateId(), role: "user", content: `🎬 Generate video: ${videoPrompt}`, ts: Date.now() };
+    if (!videoPrompt.trim()) return;
+    const HF_TOKEN = import.meta.env.VITE_HF_TOKEN;
+    if (!HF_TOKEN) {
+      alert("Please add your Hugging Face token (VITE_HF_TOKEN) to your .env file.\nGet it free at: https://huggingface.co/settings/tokens");
+      return;
+    }
+    setVideoLoading(true); setTypingDone(false);
+    const prompt = videoPrompt;
+    setVideoPrompt(""); setShowVideoGen(false);
+    const userMsg = { id: generateId(), role: "user", content: `🎬 Generate video: ${prompt}`, ts: Date.now() };
     const updatedMessages = [...currentMessages, userMsg];
     setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: updatedMessages } }));
     updateSessionTitle(activeSession, updatedMessages);
     try {
-      // Use Pollinations text-to-video
-      const videoUrl = `https://v.pollinations.ai/${encodeURIComponent(videoPrompt)}?seed=${Math.floor(Math.random() * 99999)}&nologo=true`;
-      const aiMsg = { id: generateId(), role: "assistant", content: `Here's your generated video for: "${videoPrompt}"\n\nNote: Video may take a moment to load.`, videoUrl, ts: Date.now() };
-      setLatestMsgId(aiMsg.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
-      setVideoPrompt(""); setShowVideoGen(false);
-    } catch { const e = { id: generateId(), role: "assistant", content: "⚠️ Could not generate video. Please try again.", ts: Date.now() }; setLatestMsgId(e.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } })); }
-    finally { setVideoLoading(false); setTypingDone(true); }
+      // Submit job to Hugging Face Inference API
+      const response = await fetch(
+        "https://api-inference.huggingface.co/models/Wan-AI/Wan2.1-T2V-14B",
+        {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${HF_TOKEN}`, "Content-Type": "application/json", "x-wait-for-model": "true" },
+          body: JSON.stringify({ inputs: prompt, parameters: { num_frames: 16, num_inference_steps: 20 } })
+        }
+      );
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        // Model loading — retry after 30s
+        if (response.status === 503) {
+          const waitMsg = { id: generateId(), role: "assistant", content: `⏳ Video model is loading (this can take 1-2 mins on first use). Your video for "${prompt}" will appear shortly…`, ts: Date.now() };
+          setLatestMsgId(waitMsg.id);
+          setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, waitMsg] } }));
+          await new Promise(r => setTimeout(r, 40000));
+          // Retry once
+          const retry = await fetch("https://api-inference.huggingface.co/models/Wan-AI/Wan2.1-T2V-14B", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${HF_TOKEN}`, "Content-Type": "application/json", "x-wait-for-model": "true" },
+            body: JSON.stringify({ inputs: prompt, parameters: { num_frames: 16, num_inference_steps: 20 } })
+          });
+          if (!retry.ok) throw new Error("Model still loading, please try again in a few minutes.");
+          const blob = await retry.blob();
+          const videoUrl = URL.createObjectURL(blob);
+          const aiMsg = { id: generateId(), role: "assistant", content: `Here's your video: "${prompt}"`, videoUrl, ts: Date.now() };
+          setLatestMsgId(aiMsg.id);
+          setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+          return;
+        }
+        throw new Error(err.error || "Video generation failed");
+      }
+      const blob = await response.blob();
+      const videoUrl = URL.createObjectURL(blob);
+      const aiMsg = { id: generateId(), role: "assistant", content: `Here's your video: "${prompt}"`, videoUrl, ts: Date.now() };
+      setLatestMsgId(aiMsg.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+    } catch (err) {
+      const e = { id: generateId(), role: "assistant", content: `⚠️ Video generation failed: ${err.message}\n\nTip: The model may be cold-starting. Try again in 1-2 minutes.`, ts: Date.now() };
+      setLatestMsgId(e.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } }));
+    } finally { setVideoLoading(false); setTypingDone(true); }
   };
 
   const summarizeWebsite = async () => {
