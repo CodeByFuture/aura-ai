@@ -519,44 +519,36 @@ export default function AuraAI() {
     setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: updatedMessages } }));
     updateSessionTitle(activeSession, updatedMessages);
     try {
-      // Submit job to Hugging Face Inference API
-      const response = await fetch(
-        "https://api-inference.huggingface.co/models/Wan-AI/Wan2.1-T2V-14B",
-        {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${HF_TOKEN}`, "Content-Type": "application/json", "x-wait-for-model": "true" },
-          body: JSON.stringify({ inputs: prompt, parameters: { num_frames: 16, num_inference_steps: 20 } })
-        }
-      );
+      // Show loading message
+      const loadMsg = { id: generateId(), role: "assistant", content: `⏳ Generating your video for: "${prompt}"\n\nThis takes 1-3 minutes. Please wait…`, ts: Date.now() };
+      setLatestMsgId(loadMsg.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, loadMsg] } }));
+
+      // Call our Vercel serverless function (no CORS issues)
+      const response = await fetch("/api/video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        // Model loading — retry after 30s
-        if (response.status === 503) {
-          const waitMsg = { id: generateId(), role: "assistant", content: `⏳ Video model is loading (this can take 1-2 mins on first use). Your video for "${prompt}" will appear shortly…`, ts: Date.now() };
-          setLatestMsgId(waitMsg.id);
-          setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, waitMsg] } }));
-          await new Promise(r => setTimeout(r, 40000));
-          // Retry once
-          const retry = await fetch("https://api-inference.huggingface.co/models/Wan-AI/Wan2.1-T2V-14B", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${HF_TOKEN}`, "Content-Type": "application/json", "x-wait-for-model": "true" },
-            body: JSON.stringify({ inputs: prompt, parameters: { num_frames: 16, num_inference_steps: 20 } })
-          });
-          if (!retry.ok) throw new Error("Model still loading, please try again in a few minutes.");
-          const blob = await retry.blob();
-          const videoUrl = URL.createObjectURL(blob);
-          const aiMsg = { id: generateId(), role: "assistant", content: `Here's your video: "${prompt}"`, videoUrl, ts: Date.now() };
-          setLatestMsgId(aiMsg.id);
-          setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
-          return;
-        }
-        throw new Error(err.error || "Video generation failed");
+        throw new Error(err.error || `Server error: ${response.status}`);
       }
+
       const blob = await response.blob();
       const videoUrl = URL.createObjectURL(blob);
+
+      // Replace loading message with video
       const aiMsg = { id: generateId(), role: "assistant", content: `Here's your video: "${prompt}"`, videoUrl, ts: Date.now() };
       setLatestMsgId(aiMsg.id);
-      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+      setSessions(s => ({
+        ...s,
+        [activeSession]: {
+          ...s[activeSession],
+          messages: [...updatedMessages, aiMsg]
+        }
+      }));
     } catch (err) {
       const e = { id: generateId(), role: "assistant", content: `⚠️ Video generation failed: ${err.message}\n\nTip: The model may be cold-starting. Try again in 1-2 minutes.`, ts: Date.now() };
       setLatestMsgId(e.id);
