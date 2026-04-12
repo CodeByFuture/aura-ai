@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     let response = await fetch(
-      "https://api-inference.huggingface.co/models/Wan-AI/Wan2.1-T2V-14B",
+      "https://router.huggingface.co/hf-inference/models/Wan-AI/Wan2.1-T2V-14B",
       {
         method: "POST",
         headers: {
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
       await new Promise(r => setTimeout(r, Math.min(waitTime, 60000)));
 
       response = await fetch(
-        "https://api-inference.huggingface.co/models/Wan-AI/Wan2.1-T2V-14B",
+        "https://router.huggingface.co/hf-inference/models/Wan-AI/Wan2.1-T2V-14B",
         {
           method: "POST",
           headers: {
