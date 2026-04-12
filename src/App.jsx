@@ -115,6 +115,7 @@ function MessageBubble({ msg, dark, onReact, isLatest, onTypeDone, accent, accen
       <div style={{ display: "flex", alignItems: "flex-end", gap: 8, flexDirection: isUser ? "row-reverse" : "row", maxWidth: "100%" }}>
         <div style={{ maxWidth: "75%", padding: "14px 18px", borderRadius: isUser ? "20px 20px 6px 20px" : "20px 20px 20px 6px", background: isUser ? `linear-gradient(135deg, ${accent}, ${accent2})` : msg.isGameDev ? (dark ? "#1a2a1a" : "#f0fff0") : dark ? "#1e1e2e" : "#f5f5f7", color: isUser ? "#fff" : dark ? "#e8e6f0" : "#1a1a2e", boxShadow: isUser ? `0 4px 20px ${accent}55` : dark ? "0 4px 16px rgba(0,0,0,0.3)" : "0 4px 16px rgba(0,0,0,0.08)", fontFamily: msg.isGameDev ? "'JetBrains Mono', monospace" : "'DM Sans', sans-serif", fontSize: "0.92rem", lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word", border: msg.isGameDev && !isUser ? `1px solid #10b98133` : "none" }}>
           {msg.imageUrl && <div style={{ marginBottom: 10 }}><img src={msg.imageUrl} alt="generated" style={{ maxWidth: "100%", borderRadius: 12, display: "block" }} /><div style={{ fontSize: "0.72rem", opacity: 0.7, marginTop: 6 }}>🎨 AI Generated</div></div>}
+          {msg.thumbnailUrl && <div style={{ marginBottom: 10 }}><img src={msg.thumbnailUrl} alt="YouTube thumbnail" style={{ maxWidth: "100%", borderRadius: 12, display: "block" }} onError={e => e.target.style.display = "none"} /><div style={{ fontSize: "0.72rem", opacity: 0.7, marginTop: 6 }}>📹 YouTube Video</div></div>}
           {msg.videoUrl && (
             <div style={{ marginBottom: 10 }}>
               <video src={msg.videoUrl} controls style={{ maxWidth: "100%", borderRadius: 12, display: "block" }} />
@@ -379,14 +380,14 @@ export default function AuraAI() {
   const [showThemes, setShowThemes] = useState(false);
   const [showImageGen, setShowImageGen] = useState(false);
   const [showWebSum, setShowWebSum] = useState(false);
-  const [showVideoGen, setShowVideoGen] = useState(false);
+  const [showYouTube, setShowYouTube] = useState(false);
   const [showGameDev, setShowGameDev] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [imagePrompt, setImagePrompt] = useState("");
-  const [videoPrompt, setVideoPrompt] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [webUrl, setWebUrl] = useState("");
   const [imageLoading, setImageLoading] = useState(false);
-  const [videoLoading, setVideoLoading] = useState(false);
+  const [youtubeLoading, setYoutubeLoading] = useState(false);
   const [webLoading, setWebLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [latestMsgId, setLatestMsgId] = useState(null);
@@ -503,57 +504,67 @@ export default function AuraAI() {
     } finally { setImageLoading(false); }
   };
 
-  // Video generation using Hugging Face free API (Wan2.1)
-  const generateVideo = async () => {
-    if (!videoPrompt.trim()) return;
-    const HF_TOKEN = import.meta.env.VITE_HF_TOKEN;
-    if (!HF_TOKEN) {
-      alert("Please add your Hugging Face token (VITE_HF_TOKEN) to your .env file.\nGet it free at: https://huggingface.co/settings/tokens");
-      return;
-    }
-    setVideoLoading(true); setTypingDone(false);
-    const prompt = videoPrompt;
-    setVideoPrompt(""); setShowVideoGen(false);
-    const userMsg = { id: generateId(), role: "user", content: `🎬 Generate video: ${prompt}`, ts: Date.now() };
+  // YouTube Summarizer
+  const summarizeYouTube = async () => {
+    if (!youtubeUrl.trim()) return;
+    setYoutubeLoading(true); setTypingDone(false);
+    const url = youtubeUrl.trim();
+    setYoutubeUrl(""); setShowYouTube(false);
+
+    // Extract video ID
+    const videoIdMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/);
+    const videoId = videoIdMatch ? videoIdMatch[1] : null;
+
+    const userMsg = { id: generateId(), role: "user", content: `📹 Summarize YouTube: ${url}`, ts: Date.now() };
     const updatedMessages = [...currentMessages, userMsg];
     setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: updatedMessages } }));
     updateSessionTitle(activeSession, updatedMessages);
-    try {
-      // Show loading message
-      const loadMsg = { id: generateId(), role: "assistant", content: `⏳ Generating your video for: "${prompt}"\n\nThis takes 1-3 minutes. Please wait…`, ts: Date.now() };
-      setLatestMsgId(loadMsg.id);
-      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, loadMsg] } }));
 
-      // Call our Vercel serverless function (no CORS issues)
-      const response = await fetch("/api/video", {
+    try {
+      const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+      const thumbnailUrl = videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;
+
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt })
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 1500,
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert YouTube video summarizer. When given a YouTube URL, provide:
+1. 🎬 **Video Title** (guess from URL/context if needed)
+2. 📝 **Summary** (3-4 paragraphs covering main points)
+3. 🔑 **Key Takeaways** (5 bullet points)
+4. ⏱️ **Best For** (who should watch this)
+5. ⭐ **Rating** (estimate quality 1-10)
+Be detailed, helpful and accurate. Format with clear sections.`
+            },
+            {
+              role: "user",
+              content: `Please summarize this YouTube video: ${url}\n${videoId ? `Video ID: ${videoId}` : ""}`
+            }
+          ]
+        })
       });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `Server error: ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      const videoUrl = URL.createObjectURL(blob);
-
-      // Replace loading message with video
-      const aiMsg = { id: generateId(), role: "assistant", content: `Here's your video: "${prompt}"`, videoUrl, ts: Date.now() };
+      const data = await res.json();
+      const fullText = data?.choices?.[0]?.message?.content || "Could not summarize this video.";
+      const aiMsg = {
+        id: generateId(),
+        role: "assistant",
+        content: fullText,
+        thumbnailUrl,
+        ts: Date.now()
+      };
       setLatestMsgId(aiMsg.id);
-      setSessions(s => ({
-        ...s,
-        [activeSession]: {
-          ...s[activeSession],
-          messages: [...updatedMessages, aiMsg]
-        }
-      }));
-    } catch (err) {
-      const e = { id: generateId(), role: "assistant", content: `⚠️ Video generation failed: ${err.message}\n\nTip: The model may be cold-starting. Try again in 1-2 minutes.`, ts: Date.now() };
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+    } catch {
+      const e = { id: generateId(), role: "assistant", content: "⚠️ Could not summarize video. Please check the URL and try again.", ts: Date.now() };
       setLatestMsgId(e.id);
       setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } }));
-    } finally { setVideoLoading(false); setTypingDone(true); }
+    } finally { setYoutubeLoading(false); setTypingDone(true); }
   };
 
   const summarizeWebsite = async () => {
@@ -625,7 +636,7 @@ export default function AuraAI() {
       {/* Quick tools */}
       <div style={{ padding: "10px 12px", borderBottom: `1px solid ${c.border}`, display: "flex", gap: 6, flexWrap: "wrap" }}>
         {[{ icon: "🖼️", title: "Image", action: () => { setShowImageGen(v => !v); setShowWebSum(false); setShowVideoGen(false); } },
-          { icon: "🎬", title: "Video", action: () => { setShowVideoGen(v => !v); setShowImageGen(false); setShowWebSum(false); } },
+        { icon: "📹", title: "YouTube", action: () => { setShowYouTube(v => !v); setShowImageGen(false); setShowWebSum(false); } },
           { icon: "🌐", title: "Web", action: () => { setShowWebSum(v => !v); setShowImageGen(false); setShowVideoGen(false); } },
           { icon: "🎮", title: "Game Dev", action: () => { setShowGameDev(true); if (isMobile) setSidebarOpen(false); } },
           { icon: "🎨", title: "Themes", action: () => setShowThemes(v => !v) },
@@ -747,14 +758,19 @@ export default function AuraAI() {
             </div>
           )}
 
-          {showVideoGen && (
+          {showYouTube && (
             <div style={{ padding: "12px 16px", background: c.surface, borderBottom: `1px solid ${c.border}` }}>
-              <div style={{ fontSize: "0.72rem", color: c.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase" }}>🎬 Video Generation</div>
+              <div style={{ fontSize: "0.72rem", color: c.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase" }}>📹 YouTube Summarizer</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <input value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} onKeyDown={e => e.key === "Enter" && generateVideo()} placeholder="Describe your video… e.g. 'a sunset over mountains'" style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", outline: "none", minWidth: 0 }} onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = c.border} />
-                <button onClick={generateVideo} disabled={videoLoading || !videoPrompt.trim()} style={{ padding: "9px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: `linear-gradient(135deg, #f43f5e, #fb7185)`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.82rem", opacity: videoPrompt.trim() && !videoLoading ? 1 : 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>{videoLoading ? "…" : "🎬 Generate"}</button>
+                <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && summarizeYouTube()}
+                  placeholder="Paste YouTube URL… e.g. https://youtube.com/watch?v=..."
+                  style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${c.border}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", outline: "none", minWidth: 0 }}
+                  onFocus={e => e.target.style.borderColor = "#ff0000"} onBlur={e => e.target.style.borderColor = c.border} />
+                <button onClick={summarizeYouTube} disabled={youtubeLoading || !youtubeUrl.trim()}
+                  style={{ padding: "9px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: "linear-gradient(135deg, #ff0000, #ff4444)", color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.82rem", opacity: youtubeUrl.trim() && !youtubeLoading ? 1 : 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>
+                  {youtubeLoading ? "…" : "📹 Summarize"}
+                </button>
               </div>
-              <div style={{ fontSize: "0.7rem", color: c.muted, marginTop: 6 }}>Powered by Pollinations AI · Free · No API key needed</div>
             </div>
           )}
 
@@ -790,7 +806,7 @@ export default function AuraAI() {
               <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "fadeUp 0.5s ease", padding: "20px 0" }}>
                 <div style={{ fontSize: "2.5rem", marginBottom: 12, opacity: 0.3 }}>✦</div>
                 <div style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? "1.2rem" : "1.4rem", color: c.text, marginBottom: 8, opacity: 0.7, textAlign: "center" }}>How can I help you today?</div>
-                <div style={{ fontSize: "0.82rem", color: c.muted, maxWidth: 360, textAlign: "center", lineHeight: 1.6, marginBottom: 20 }}>Chat · Images · Videos · Game Dev · Web Summary</div>
+                <div style={{ fontSize: "0.82rem", color: c.muted, maxWidth: 360, textAlign: "center", lineHeight: 1.6, marginBottom: 20 }}>Chat · Images · YouTube · Game Dev · Web Summary</div>
                 {/* Game dev quick prompts on homepage */}
                 <div style={{ width: "100%", maxWidth: 500 }}>
                   <div style={{ fontSize: "0.72rem", color: "#10b981", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10, textAlign: "center" }}>🎮 Game Dev Quick Start</div>
@@ -814,11 +830,11 @@ export default function AuraAI() {
                 <MessageBubble msg={msg} dark={dark} onReact={handleReact} isLatest={msg.id === latestMsgId} onTypeDone={() => setTypingDone(true)} accent={accent} accent2={accent2} />
               </div>
             ))}
-            {(loading || imageLoading || videoLoading || webLoading) && (
+            {(loading || imageLoading || youtubeLoading || webLoading) && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
                 <div style={{ width: 26, height: 26, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", color: "#fff" }}>✦</div>
                 <div style={{ display: "flex", gap: 4 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: accent, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }} />)}</div>
-                <div style={{ fontSize: "0.75rem", color: c.muted }}>{imageLoading ? "Generating image…" : videoLoading ? "Generating video…" : webLoading ? "Reading website…" : "Thinking…"}</div>
+                <div style={{ fontSize: "0.75rem", color: c.muted }}>{imageLoading ? "Generating image…" : youtubeLoading ? "Summarizing YouTube video…" : webLoading ? "Reading website…" : "Thinking…"}</div>
               </div>
             )}
             <div ref={bottomRef} />
@@ -842,7 +858,7 @@ export default function AuraAI() {
               </button>
             </div>
             <div style={{ fontSize: "0.65rem", color: c.muted, textAlign: "center", marginTop: 8 }}>
-              Aura AI · 🎮 Game Dev · 🎬 Video · 🖼️ Images · 🌐 Web
+              Aura AI · 🎮 Game Dev · 📹 YouTube · 🖼️ Images · 🌐 Web
             </div>
           </div>
         </div>
