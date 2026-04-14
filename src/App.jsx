@@ -382,6 +382,8 @@ export default function AuraAI() {
   const [showWebSum, setShowWebSum] = useState(false);
   const [showYouTube, setShowYouTube] = useState(false);
   const [showGameDev, setShowGameDev] = useState(false);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [showMemory, setShowMemory] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [imagePrompt, setImagePrompt] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -389,6 +391,9 @@ export default function AuraAI() {
   const [imageLoading, setImageLoading] = useState(false);
   const [youtubeLoading, setYoutubeLoading] = useState(false);
   const [webLoading, setWebLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [userMemory, setUserMemory] = useState(() => JSON.parse(localStorage.getItem(`aura_memory_${localStorage.getItem("aura_current_user")}`) || "[]"));
+  const fileInputRef = useRef(null);
   const [listening, setListening] = useState(false);
   const [latestMsgId, setLatestMsgId] = useState(null);
   const [typingDone, setTypingDone] = useState(true);
@@ -441,7 +446,27 @@ export default function AuraAI() {
   const updateSessionTitle = (id, messages) => { if (messages.length === 1) { const title = messages[0].content.slice(0, 40) + (messages[0].content.length > 40 ? "…" : ""); setSessions(s => ({ ...s, [id]: { ...s[id], title } })); } };
   const handleReact = (msgId, emoji) => { setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: s[activeSession].messages.map(m => m.id === msgId ? { ...m, reactions: [...(m.reactions || []), emoji] } : m) } })); };
 
-  const sendMessage = async (text, isGameDev = false) => {
+  // Persist memory
+  useEffect(() => {
+    if (currentUser) localStorage.setItem(`aura_memory_${currentUser}`, JSON.stringify(userMemory));
+  }, [userMemory, currentUser]);
+
+  // Load memory when user changes
+  useEffect(() => {
+    if (currentUser) {
+      const saved = JSON.parse(localStorage.getItem(`aura_memory_${currentUser}`) || "[]");
+      setUserMemory(saved);
+    }
+  }, [currentUser]);
+
+  const addMemory = (fact) => {
+    setUserMemory(m => {
+      const updated = [...m.filter(f => f !== fact), fact].slice(-20); // keep last 20 facts
+      return updated;
+    });
+  };
+
+  const sendMessage = async (text, isGameDev = false, pdfContent = null) => {
     if (!text || loading || !typingDone) return;
     setInput("");
     const userMsg = { id: generateId(), role: "user", content: text, ts: Date.now() };
@@ -450,21 +475,132 @@ export default function AuraAI() {
     updateSessionTitle(activeSession, updatedMessages); setLoading(true); setTypingDone(false);
     try {
       const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-      const gameDevSystem = `You are an expert game developer assistant specializing in Unity, Unreal Engine, Godot, and other game engines. You provide detailed code snippets, explain implementation steps clearly, suggest creative game design ideas, help debug errors, generate enemy AI logic, dialogue scripts, and game mechanics. Always format code properly with syntax highlighting markers. Be technical, precise, and practical.`;
+      const memoryContext = userMemory.length > 0 ? `\n\n🧠 MEMORY — Facts about this user:\n${userMemory.map((f, i) => `${i + 1}. ${f}`).join("\n")}\n\nUse these facts naturally in conversation when relevant.` : "";
+      const gameDevSystem = `You are an expert game developer assistant specializing in Unity, Unreal Engine, Godot, and other game engines. You provide detailed code snippets, explain implementation steps clearly, suggest creative game design ideas, help debug errors, generate enemy AI logic, dialogue scripts, and game mechanics. Always format code properly. Be technical, precise, and practical.${memoryContext}`;
+      const baseSystem = systemPrompt + memoryContext;
+      const pdfSystem = `You are a helpful assistant that analyzes PDF documents. The user has uploaded a PDF. Here is the extracted text content:\n\n${pdfContent}\n\nAnswer questions about this document accurately and helpfully.${memoryContext}`;
+
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
-        body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1500, messages: [{ role: "system", content: isGameDev ? gameDevSystem : systemPrompt }, ...updatedMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }))] })
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 1500,
+          messages: [
+            { role: "system", content: pdfContent ? pdfSystem : isGameDev ? gameDevSystem : baseSystem },
+            ...updatedMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }))
+          ]
+        })
       });
       const data = await res.json();
       const fullText = data?.choices?.[0]?.message?.content || data?.error?.message || "I couldn't process that — please try again.";
+
+      // Auto-extract memory facts from response
+      if (text.toLowerCase().includes("my name is") || text.toLowerCase().includes("i am ") || text.toLowerCase().includes("i'm ") || text.toLowerCase().includes("i like") || text.toLowerCase().includes("i love") || text.toLowerCase().includes("i work") || text.toLowerCase().includes("i study")) {
+        addMemory(text.slice(0, 100));
+      }
+
       const aiMsg = { id: generateId(), role: "assistant", content: fullText, ts: Date.now(), isGameDev };
-      setLatestMsgId(aiMsg.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
-    } catch { const e = { id: generateId(), role: "assistant", content: "⚠️ Network error.", ts: Date.now() }; setLatestMsgId(e.id); setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } })); }
-    finally { setLoading(false); }
+      setLatestMsgId(aiMsg.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+    } catch {
+      const e = { id: generateId(), role: "assistant", content: "⚠️ Network error.", ts: Date.now() };
+      setLatestMsgId(e.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } }));
+    } finally { setLoading(false); }
   };
 
-  const handleSend = () => { const text = input.trim(); if (text) sendMessage(text, false); };
+  // Slash commands handler
+  const SLASH_COMMANDS = [
+    { cmd: "/image", icon: "🖼️", desc: "Generate an image", action: () => { setShowImageGen(true); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/youtube", icon: "📹", desc: "Summarize a YouTube video", action: () => { setShowYouTube(true); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/web", icon: "🌐", desc: "Summarize a website", action: () => { setShowWebSum(true); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/game", icon: "🎮", desc: "Open Game Dev Assistant", action: () => { setShowGameDev(true); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/pdf", icon: "📄", desc: "Upload and read a PDF", action: () => { fileInputRef.current?.click(); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/memory", icon: "🧠", desc: "View or edit bot memory", action: () => { setShowMemory(true); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/new", icon: "➕", desc: "Start a new conversation", action: () => { newSession(); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/clear", icon: "🗑️", desc: "Clear current chat", action: () => { setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [] } })); setInput(""); setShowSlashMenu(false); } },
+  ];
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setInput(val);
+    setShowSlashMenu(val === "/" || (val.startsWith("/") && val.length < 15 && !val.includes(" ")));
+  };
+
+  const filteredSlashCmds = input.startsWith("/") ? SLASH_COMMANDS.filter(c => c.cmd.startsWith(input.toLowerCase())) : SLASH_COMMANDS;
+
+  const handleSend = () => {
+    const text = input.trim();
+    if (!text) return;
+    if (text.startsWith("/")) {
+      const cmd = SLASH_COMMANDS.find(c => c.cmd === text.toLowerCase());
+      if (cmd) { cmd.action(); return; }
+    }
+    sendMessage(text, false);
+  };
+
+  // PDF Reader
+  const handlePDFUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || file.type !== "application/pdf") { alert("Please select a PDF file."); return; }
+    setPdfLoading(true); setTypingDone(false);
+    const userMsg = { id: generateId(), role: "user", content: `📄 Uploaded PDF: ${file.name}`, ts: Date.now() };
+    const updatedMessages = [...currentMessages, userMsg];
+    setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: updatedMessages } }));
+    updateSessionTitle(activeSession, updatedMessages);
+    try {
+      // Read PDF as text using FileReader
+      const text = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            // Extract text from PDF binary
+            const bytes = new Uint8Array(e.target.result);
+            let text = "";
+            // Simple PDF text extraction — find text between stream markers
+            const str = new TextDecoder("latin1").decode(bytes);
+            const matches = str.match(/BT[\s\S]*?ET/g) || [];
+            for (const block of matches) {
+              const textMatches = block.match(/\(([^)]+)\)/g) || [];
+              text += textMatches.map(t => t.slice(1, -1)).join(" ") + " ";
+            }
+            // Fallback: extract readable ASCII text
+            if (text.trim().length < 50) {
+              text = str.replace(/[^\x20-\x7E\n]/g, " ").replace(/\s+/g, " ").slice(0, 8000);
+            }
+            resolve(text.slice(0, 8000));
+          } catch { reject(new Error("Could not read PDF")); }
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+
+      const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 1500,
+          messages: [
+            { role: "system", content: `You are analyzing a PDF document named "${file.name}". Extracted content:\n\n${text}\n\nProvide a comprehensive summary with: 📄 Document Title, 📝 Summary (3-4 paragraphs), 🔑 Key Points (5 bullets), and ask what specific questions they have.` },
+            { role: "user", content: `Please analyze and summarize this PDF: ${file.name}` }
+          ]
+        })
+      });
+      const data = await res.json();
+      const fullText = data?.choices?.[0]?.message?.content || "Could not analyze PDF.";
+      const aiMsg = { id: generateId(), role: "assistant", content: fullText, ts: Date.now(), pdfName: file.name };
+      setLatestMsgId(aiMsg.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, aiMsg] } }));
+    } catch (err) {
+      const e = { id: generateId(), role: "assistant", content: `⚠️ Could not read PDF: ${err.message}`, ts: Date.now() };
+      setLatestMsgId(e.id);
+      setSessions(s => ({ ...s, [activeSession]: { ...s[activeSession], messages: [...updatedMessages, e] } }));
+    } finally { setPdfLoading(false); setTypingDone(true); if (fileInputRef.current) fileInputRef.current.value = ""; }
+  };
+
 
   const generateImage = async () => {
     if (!imagePrompt.trim()) return;
@@ -714,6 +850,50 @@ Be detailed, helpful and accurate. Format with clear sections.`
       {showDashboard && <ChartsDashboard sessions={sessions} dark={dark} accent={accent} accent2={accent2} totalMessages={totalMessages} totalTokens={totalTokens} onClose={() => setShowDashboard(false)} />}
       {showGameDev && <GameDevPanel dark={dark} accent={accent} accent2={accent2} onPrompt={(text, isGD) => sendMessage(text, isGD)} onClose={() => setShowGameDev(false)} />}
 
+      {/* Memory Modal */}
+      {showMemory && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
+          <div style={{ background: dark ? "#161628" : "#fff", borderRadius: 20, padding: "28px", width: "min(480px, 92vw)", maxHeight: "80vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${dark ? "#2a2a40" : "#e8e8f0"}`, animation: "fadeUp 0.3s ease" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem" }}>🧠</div>
+                <div>
+                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", color: dark ? "#e8e6f0" : "#1a1a2e" }}>Bot Memory</div>
+                  <div style={{ fontSize: "0.7rem", color: dark ? "#666680" : "#9090a0" }}>Aura remembers these facts about you</div>
+                </div>
+              </div>
+              <button onClick={() => setShowMemory(false)} style={{ width: 30, height: 30, borderRadius: "50%", border: `1px solid ${dark ? "#2a2a40" : "#e8e8f0"}`, background: "transparent", color: dark ? "#666680" : "#9090a0", cursor: "pointer", fontSize: "0.9rem" }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", marginBottom: 16 }}>
+              {userMemory.length === 0 ? (
+                <div style={{ textAlign: "center", color: dark ? "#666680" : "#9090a0", padding: "30px 0", fontSize: "0.85rem" }}>
+                  <div style={{ fontSize: "2rem", marginBottom: 8 }}>🧠</div>
+                  No memories yet. Tell Aura things like:<br />
+                  <span style={{ color: accent }}>"My name is Shehroz"</span> or <span style={{ color: accent }}>"I love game dev"</span>
+                </div>
+              ) : userMemory.map((fact, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, background: dark ? "#1e1e2e" : "#f5f5f7", marginBottom: 6, border: `1px solid ${dark ? "#2a2a40" : "#e8e8f0"}` }}>
+                  <div style={{ fontSize: "0.85rem", color: dark ? "#e8e6f0" : "#1a1a2e", flex: 1 }}>💭 {fact}</div>
+                  <button onClick={() => setUserMemory(m => m.filter((_, idx) => idx !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: "#f87171", fontSize: "0.8rem", flexShrink: 0, marginLeft: 8 }}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input placeholder="Add a memory… e.g. I study O-levels" id="mem-input"
+                style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: `1px solid ${dark ? "#2a2a40" : "#e8e8f0"}`, background: dark ? "#0d0d1a" : "#f5f5f7", color: dark ? "#e8e6f0" : "#1a1a2e", fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", outline: "none" }}
+                onKeyDown={e => { if (e.key === "Enter" && e.target.value.trim()) { addMemory(e.target.value.trim()); e.target.value = ""; } }}
+                onFocus={ev => ev.target.style.borderColor = accent} onBlur={ev => ev.target.style.borderColor = dark ? "#2a2a40" : "#e8e8f0"} />
+              <button onClick={() => { const inp = document.getElementById("mem-input"); if (inp.value.trim()) { addMemory(inp.value.trim()); inp.value = ""; } }}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.85rem" }}>Add</button>
+            </div>
+            {userMemory.length > 0 && <button onClick={() => setUserMemory([])} style={{ marginTop: 8, padding: "8px", borderRadius: 10, border: `1px solid #f87171`, background: "transparent", color: "#f87171", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: "0.8rem" }}>🗑️ Clear All Memories</button>}
+          </div>
+        </div>
+      )}
+
+      {/* Hidden PDF input */}
+      <input ref={fileInputRef} type="file" accept=".pdf" onChange={handlePDFUpload} style={{ display: "none" }} />
+
       {/* Mobile overlay */}
       {isMobile && sidebarOpen && (
         <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 99, backdropFilter: "blur(2px)" }} />
@@ -830,11 +1010,11 @@ Be detailed, helpful and accurate. Format with clear sections.`
                 <MessageBubble msg={msg} dark={dark} onReact={handleReact} isLatest={msg.id === latestMsgId} onTypeDone={() => setTypingDone(true)} accent={accent} accent2={accent2} />
               </div>
             ))}
-            {(loading || imageLoading || youtubeLoading || webLoading) && (
+            {(loading || imageLoading || youtubeLoading || webLoading || pdfLoading) && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
                 <div style={{ width: 26, height: 26, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", color: "#fff" }}>✦</div>
                 <div style={{ display: "flex", gap: 4 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: accent, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }} />)}</div>
-                <div style={{ fontSize: "0.75rem", color: c.muted }}>{imageLoading ? "Generating image…" : youtubeLoading ? "Summarizing YouTube video…" : webLoading ? "Reading website…" : "Thinking…"}</div>
+                <div style={{ fontSize: "0.75rem", color: c.muted }}>{imageLoading ? "Generating image…" : youtubeLoading ? "Summarizing YouTube video…" : webLoading ? "Reading website…" : pdfLoading ? "Reading PDF…" : "Thinking…"}</div>
               </div>
             )}
             <div ref={bottomRef} />
@@ -842,13 +1022,46 @@ Be detailed, helpful and accurate. Format with clear sections.`
 
           {/* Input bar */}
           <div style={{ padding: isMobile ? "10px 12px 16px" : "12px 20px 16px", background: c.surface, borderTop: `1px solid ${c.border}`, flexShrink: 0 }}>
+
+            {/* Slash command menu */}
+            {showSlashMenu && (
+              <div style={{ background: dark ? "#1e1e2e" : "#fff", borderRadius: 14, border: `1px solid ${c.border}`, marginBottom: 8, overflow: "hidden", boxShadow: "0 -4px 20px rgba(0,0,0,0.2)", animation: "fadeUp 0.15s ease" }}>
+                <div style={{ padding: "8px 12px", fontSize: "0.68rem", color: c.muted, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${c.border}` }}>⌨️ Commands</div>
+                {filteredSlashCmds.map(cmd => (
+                  <div key={cmd.cmd} onClick={cmd.action} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer", transition: "background 0.1s" }}
+                    onMouseEnter={e => e.currentTarget.style.background = c.accentLight}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <span style={{ fontSize: "1rem" }}>{cmd.icon}</span>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 600, color: accent, fontFamily: "'JetBrains Mono', monospace" }}>{cmd.cmd}</span>
+                    <span style={{ fontSize: "0.8rem", color: c.muted }}>{cmd.desc}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Memory indicator */}
+            {userMemory.length > 0 && (
+              <div onClick={() => setShowMemory(true)} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, cursor: "pointer", width: "fit-content" }}>
+                <div style={{ padding: "3px 10px", borderRadius: 20, background: `${accent}15`, border: `1px solid ${accent}33`, fontSize: "0.68rem", color: accent, display: "flex", alignItems: "center", gap: 4 }}>
+                  🧠 {userMemory.length} memories active
+                </div>
+              </div>
+            )}
+
             <div style={{ display: "flex", alignItems: "flex-end", gap: 8, background: dark ? "#0d0d1a" : "#f5f5f7", borderRadius: 16, padding: "8px 12px", border: `1px solid ${c.border}`, transition: "border-color 0.2s" }}
               onFocusCapture={e => e.currentTarget.style.borderColor = accent}
               onBlurCapture={e => e.currentTarget.style.borderColor = c.border}>
               <button onClick={toggleVoice} style={{ width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: listening ? `${accent}22` : "transparent", color: listening ? accent2 : c.muted, fontSize: "0.9rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: listening ? "pulse 1s infinite" : "none" }}>🎤</button>
-              <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder="Message Aura…"
+
+              {/* PDF upload button */}
+              <button onClick={() => fileInputRef.current?.click()} title="Upload PDF" style={{ width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: pdfLoading ? accent : c.muted, fontSize: "0.9rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: pdfLoading ? "pulse 1s infinite" : "none" }}>📄</button>
+
+              <textarea ref={inputRef} value={input} onChange={handleInputChange}
+                onKeyDown={e => {
+                  if (e.key === "Escape") setShowSlashMenu(false);
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                }}
+                placeholder="Message Aura… (type / for commands)"
                 rows={1}
                 style={{ flex: 1, background: "transparent", border: "none", color: c.text, fontFamily: "'DM Sans', sans-serif", fontSize: "0.88rem", lineHeight: 1.6, maxHeight: 100, overflowY: "auto", paddingTop: 4, outline: "none", minWidth: 0 }} />
               {!isMobile && <div style={{ fontSize: "0.65rem", color: c.muted, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0, paddingBottom: 2 }}>~{estimateTokens(input)}t</div>}
@@ -858,7 +1071,7 @@ Be detailed, helpful and accurate. Format with clear sections.`
               </button>
             </div>
             <div style={{ fontSize: "0.65rem", color: c.muted, textAlign: "center", marginTop: 8 }}>
-              Aura AI · 🎮 Game Dev · 📹 YouTube · 🖼️ Images · 🌐 Web
+              Aura AI · 🧠 Memory · 📄 PDF · ⌨️ /commands · 🎮 Game Dev · 🖼️ Images
             </div>
           </div>
         </div>
