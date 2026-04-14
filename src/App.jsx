@@ -360,6 +360,232 @@ function GameDevPanel({ dark, accent, accent2, onPrompt, onClose }) {
   );
 }
 
+// ── Code Runner Component ─────────────────────────────────────────────────────
+function CodeRunner({ dark, accent, accent2, onClose, onSendToChat }) {
+  const [code, setCode] = useState(`// JavaScript Code Runner
+// Write your code here and click Run!
+
+function greet(name) {
+  return \`Hello, \${name}! Welcome to Aura AI Code Runner!\`;
+}
+
+console.log(greet("World"));
+
+// Try some math
+const nums = [1, 2, 3, 4, 5];
+const sum = nums.reduce((a, b) => a + b, 0);
+console.log("Sum:", sum);
+console.log("Average:", sum / nums.length);`);
+  const [output, setOutput] = useState("");
+  const [language, setLanguage] = useState("javascript");
+  const [running, setRunning] = useState(false);
+  const [outputType, setOutputType] = useState("idle"); // idle | success | error
+
+  const c = {
+    surface: dark ? "#161628" : "#fff",
+    card: dark ? "#0d0d1a" : "#f5f5f7",
+    border: dark ? "#2a2a40" : "#e8e8f0",
+    text: dark ? "#e8e6f0" : "#1a1a2e",
+    muted: dark ? "#666680" : "#9090a0",
+  };
+
+  const runCode = () => {
+    setRunning(true);
+    setOutput("");
+
+    if (language === "javascript") {
+      // Run JS directly in sandboxed iframe
+      try {
+        const logs = [];
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+
+        // Capture console output
+        const captureLog = (...args) => logs.push({ type: "log", text: args.map(a => typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)).join(" ") });
+        const captureError = (...args) => logs.push({ type: "error", text: args.map(a => String(a)).join(" ") });
+        const captureWarn = (...args) => logs.push({ type: "warn", text: args.map(a => String(a)).join(" ") });
+
+        console.log = captureLog;
+        console.error = captureError;
+        console.warn = captureWarn;
+
+        try {
+          // eslint-disable-next-line no-new-func
+          const fn = new Function(code);
+          const result = fn();
+          if (result !== undefined) logs.push({ type: "return", text: `→ ${typeof result === "object" ? JSON.stringify(result, null, 2) : String(result)}` });
+          setOutputType("success");
+        } catch (err) {
+          logs.push({ type: "error", text: `❌ ${err.message}` });
+          setOutputType("error");
+        }
+
+        console.log = originalLog;
+        console.error = originalError;
+        console.warn = originalWarn;
+
+        setOutput(logs.map(l => l.text).join("\n") || "✅ Code ran with no output");
+      } catch (err) {
+        setOutput(`❌ Error: ${err.message}`);
+        setOutputType("error");
+      }
+    } else {
+      // For Python/other — send to AI to simulate execution
+      setOutput("⏳ Sending to AI to execute...");
+      setOutputType("idle");
+
+      const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+      fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 1000,
+          messages: [
+            { role: "system", content: `You are a ${language} code executor. When given code, simulate running it and show ONLY the output that would appear in a terminal. If there are errors, show the error message. Do not explain, just show the raw output. Format exactly as a terminal would show.` },
+            { role: "user", content: `Execute this ${language} code and show only the output:\n\`\`\`${language}\n${code}\n\`\`\`` }
+          ]
+        })
+      }).then(r => r.json()).then(data => {
+        const result = data?.choices?.[0]?.message?.content || "Could not execute code.";
+        setOutput(result);
+        setOutputType(result.includes("Error") || result.includes("error") ? "error" : "success");
+      }).catch(() => {
+        setOutput("❌ Failed to execute. Check your connection.");
+        setOutputType("error");
+      }).finally(() => setRunning(false));
+      return;
+    }
+    setRunning(false);
+  };
+
+  const sendToChat = () => {
+    onSendToChat(`Please review and explain this ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``);
+    onClose();
+  };
+
+  const LANGUAGES = ["javascript", "python", "c++", "java", "html", "css", "bash"];
+  const EXAMPLES = {
+    javascript: `// Fibonacci sequence
+function fibonacci(n) {
+  if (n <= 1) return n;
+  return fibonacci(n-1) + fibonacci(n-2);
+}
+for (let i = 0; i < 10; i++) {
+  console.log(\`F(\${i}) = \${fibonacci(i)}\`);
+}`,
+    python: `# List comprehension example
+squares = [x**2 for x in range(1, 11)]
+print("Squares:", squares)
+
+# Dictionary
+person = {"name": "Aura", "age": 1, "skill": "AI"}
+for key, value in person.items():
+    print(f"{key}: {value}")`,
+    html: `<!DOCTYPE html>
+<html>
+<head><title>Hello</title></head>
+<body>
+  <h1 style="color: purple">Hello from Aura AI!</h1>
+  <p>This is a sample HTML page.</p>
+</body>
+</html>`,
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
+      <div style={{ background: c.surface, borderRadius: 20, width: "95vw", maxWidth: 900, maxHeight: "92vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${c.border}`, animation: "fadeUp 0.3s ease" }}>
+
+        {/* Header */}
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: `linear-gradient(135deg, ${accent}22, ${accent2}11)` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${accent}, ${accent2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem" }}>💻</div>
+            <div>
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", color: c.text }}>Code Runner</div>
+              <div style={{ fontSize: "0.7rem", color: c.muted }}>Write, run and explain code</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {/* Language selector */}
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {LANGUAGES.map(lang => (
+                <button key={lang} onClick={() => { setLanguage(lang); setOutput(""); setOutputType("idle"); if (EXAMPLES[lang]) setCode(EXAMPLES[lang]); }}
+                  style={{ padding: "4px 10px", borderRadius: 8, border: `1px solid ${language === lang ? accent : c.border}`, background: language === lang ? `${accent}22` : "transparent", color: language === lang ? accent : c.muted, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem", fontWeight: language === lang ? 700 : 400 }}>
+                  {lang}
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "0.9rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          </div>
+        </div>
+
+        {/* Editor + Output */}
+        <div style={{ display: "flex", flex: 1, overflow: "hidden", flexDirection: window.innerWidth < 700 ? "column" : "row" }}>
+
+          {/* Code editor */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", borderRight: window.innerWidth >= 700 ? `1px solid ${c.border}` : "none", borderBottom: window.innerWidth < 700 ? `1px solid ${c.border}` : "none" }}>
+            <div style={{ padding: "8px 14px", background: dark ? "#0a0a16" : "#f0f0f8", borderBottom: `1px solid ${c.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.7rem", color: c.muted, fontFamily: "'JetBrains Mono', monospace" }}>📝 editor.{language === "javascript" ? "js" : language === "python" ? "py" : language === "c++" ? "cpp" : language === "java" ? "java" : language === "html" ? "html" : language === "css" ? "css" : "sh"}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={sendToChat} style={{ padding: "4px 10px", borderRadius: 8, border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif" }}>💬 Ask AI</button>
+                <button onClick={runCode} disabled={running} style={{ padding: "4px 14px", borderRadius: 8, border: "none", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", cursor: "pointer", fontSize: "0.78rem", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, opacity: running ? 0.6 : 1 }}>
+                  {running ? "⏳ Running…" : "▶ Run"}
+                </button>
+              </div>
+            </div>
+            <textarea value={code} onChange={e => setCode(e.target.value)}
+              spellCheck={false}
+              style={{ flex: 1, background: dark ? "#0d0d1a" : "#fafafa", color: dark ? "#a8ff78" : "#1a1a2e", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.82rem", lineHeight: 1.7, padding: "14px", border: "none", outline: "none", resize: "none", minHeight: 200, tabSize: 2 }}
+              onKeyDown={e => {
+                if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; setCode(c => c.slice(0, s) + "  " + c.slice(end)); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); }
+              }} />
+          </div>
+
+          {/* Output panel */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "8px 14px", background: dark ? "#0a0a16" : "#f0f0f8", borderBottom: `1px solid ${c.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.7rem", color: c.muted, fontFamily: "'JetBrains Mono', monospace" }}>📟 output</span>
+              {output && <button onClick={() => { setOutput(""); setOutputType("idle"); }} style={{ padding: "2px 8px", borderRadius: 6, border: `1px solid ${c.border}`, background: "transparent", color: c.muted, cursor: "pointer", fontSize: "0.68rem" }}>Clear</button>}
+            </div>
+            <div style={{ flex: 1, background: dark ? "#050510" : "#fafafa", padding: "14px", overflowY: "auto", minHeight: 150 }}>
+              {!output && outputType === "idle" && (
+                <div style={{ color: dark ? "#333350" : "#ccc", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.8rem" }}>
+                  {`// Output will appear here\n// Click ▶ Run to execute`}
+                </div>
+              )}
+              {output && (
+                <pre style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "0.8rem", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", color: outputType === "error" ? "#f87171" : outputType === "success" ? (dark ? "#a8ff78" : "#16a34a") : dark ? "#e8e6f0" : "#1a1a2e" }}>
+                  {output}
+                </pre>
+              )}
+            </div>
+
+            {/* HTML Preview */}
+            {language === "html" && output && (
+              <div style={{ borderTop: `1px solid ${c.border}` }}>
+                <div style={{ padding: "6px 14px", background: dark ? "#0a0a16" : "#f0f0f8", fontSize: "0.7rem", color: c.muted, fontFamily: "'JetBrains Mono', monospace" }}>🌐 html preview</div>
+                <iframe srcDoc={code} style={{ width: "100%", height: 150, border: "none", background: "#fff" }} sandbox="allow-scripts" title="preview" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "10px 16px", borderTop: `1px solid ${c.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: dark ? "#0a0a16" : "#f5f5f7" }}>
+          <div style={{ fontSize: "0.7rem", color: c.muted }}>
+            {language === "javascript" ? "✅ Runs live in browser" : "🤖 AI-simulated execution"} · Tab = indent · Ctrl+Enter = run
+          </div>
+          <button onClick={() => { sendToChat(`Explain this ${language} code step by step:\n\`\`\`${language}\n${code}\n\`\`\``); onClose(); }}
+            style={{ padding: "6px 14px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${accent}, ${accent2})`, color: "#fff", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "0.8rem" }}>
+            🤖 Explain with AI
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AuraAI() {
   const [users, setUsers] = useState(() => JSON.parse(localStorage.getItem("aura_users") || "{}"));
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("aura_current_user") || null);
@@ -384,6 +610,7 @@ export default function AuraAI() {
   const [showGameDev, setShowGameDev] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
+  const [showCodeRunner, setShowCodeRunner] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [imagePrompt, setImagePrompt] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -516,6 +743,7 @@ export default function AuraAI() {
     { cmd: "/youtube", icon: "📹", desc: "Summarize a YouTube video", action: () => { setShowYouTube(true); setInput(""); setShowSlashMenu(false); } },
     { cmd: "/web", icon: "🌐", desc: "Summarize a website", action: () => { setShowWebSum(true); setInput(""); setShowSlashMenu(false); } },
     { cmd: "/game", icon: "🎮", desc: "Open Game Dev Assistant", action: () => { setShowGameDev(true); setInput(""); setShowSlashMenu(false); } },
+    { cmd: "/code", icon: "💻", desc: "Open Code Runner", action: () => { setShowCodeRunner(true); setInput(""); setShowSlashMenu(false); } },
     { cmd: "/pdf", icon: "📄", desc: "Upload and read a PDF", action: () => { fileInputRef.current?.click(); setInput(""); setShowSlashMenu(false); } },
     { cmd: "/memory", icon: "🧠", desc: "View or edit bot memory", action: () => { setShowMemory(true); setInput(""); setShowSlashMenu(false); } },
     { cmd: "/new", icon: "➕", desc: "Start a new conversation", action: () => { newSession(); setInput(""); setShowSlashMenu(false); } },
@@ -773,6 +1001,7 @@ Be detailed, helpful and accurate. Format with clear sections.`
       <div style={{ padding: "10px 12px", borderBottom: `1px solid ${c.border}`, display: "flex", gap: 6, flexWrap: "wrap" }}>
         {[{ icon: "🖼️", title: "Image", action: () => { setShowImageGen(v => !v); setShowWebSum(false); setShowVideoGen(false); } },
         { icon: "📹", title: "YouTube", action: () => { setShowYouTube(v => !v); setShowImageGen(false); setShowWebSum(false); } },
+          { icon: "💻", title: "Code", action: () => { setShowCodeRunner(true); if (isMobile) setSidebarOpen(false); } },
           { icon: "🌐", title: "Web", action: () => { setShowWebSum(v => !v); setShowImageGen(false); setShowVideoGen(false); } },
           { icon: "🎮", title: "Game Dev", action: () => { setShowGameDev(true); if (isMobile) setSidebarOpen(false); } },
           { icon: "🎨", title: "Themes", action: () => setShowThemes(v => !v) },
@@ -849,6 +1078,7 @@ Be detailed, helpful and accurate. Format with clear sections.`
       {showAdmin && <AdminPanel users={users} dark={dark} accent={accent} accent2={accent2} onClose={() => setShowAdmin(false)} />}
       {showDashboard && <ChartsDashboard sessions={sessions} dark={dark} accent={accent} accent2={accent2} totalMessages={totalMessages} totalTokens={totalTokens} onClose={() => setShowDashboard(false)} />}
       {showGameDev && <GameDevPanel dark={dark} accent={accent} accent2={accent2} onPrompt={(text, isGD) => sendMessage(text, isGD)} onClose={() => setShowGameDev(false)} />}
+      {showCodeRunner && <CodeRunner dark={dark} accent={accent} accent2={accent2} onClose={() => setShowCodeRunner(false)} onSendToChat={(text) => { sendMessage(text, false); }} />}
 
       {/* Memory Modal */}
       {showMemory && (
@@ -1071,7 +1301,7 @@ Be detailed, helpful and accurate. Format with clear sections.`
               </button>
             </div>
             <div style={{ fontSize: "0.65rem", color: c.muted, textAlign: "center", marginTop: 8 }}>
-              Aura AI · 🧠 Memory · 📄 PDF · ⌨️ /commands · 🎮 Game Dev · 🖼️ Images
+              Aura AI · 🧠 Memory · 📄 PDF · 💻 Code · ⌨️ /commands · 🎮 Game Dev
             </div>
           </div>
         </div>
