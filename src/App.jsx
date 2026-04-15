@@ -122,7 +122,7 @@ function MessageBubble({ msg, dark, onReact, isLatest, onTypeDone, accent, accen
               <div style={{ fontSize: "0.72rem", opacity: 0.7, marginTop: 6 }}>🎬 AI Generated Video</div>
             </div>
           )}
-          {!isUser && isLatest && !typed ? <TypeWriter text={msg.content} speed={10} onDone={() => { setTyped(true); onTypeDone && onTypeDone(); }} /> : <span>{msg.content}</span>}
+          {!isUser && isLatest && !typed ? <TypeWriter text={msg.content} speed={10} onDone={() => { setTyped(true); onTypeDone && onTypeDone(); }} /> : isUser ? <span>{msg.content}</span> : <MarkdownMessage content={msg.content} dark={dark} />}
           {msg.reactions && msg.reactions.length > 0 && (
             <div style={{ marginTop: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
               {[...new Set(msg.reactions)].map(r => <span key={r} style={{ background: dark ? "#2a2a3e" : "#e8e8ef", borderRadius: 12, padding: "2px 8px", fontSize: "0.78rem", cursor: "pointer" }} onClick={() => onReact(msg.id, r)}>{r} {msg.reactions.filter(x => x === r).length}</span>)}
@@ -360,7 +360,98 @@ function GameDevPanel({ dark, accent, accent2, onPrompt, onClose }) {
   );
 }
 
-// ── Code Runner Component ─────────────────────────────────────────────────────
+// ── Markdown Renderer ─────────────────────────────────────────────────────────
+function renderMarkdown(text, dark) {
+  if (!text) return "";
+  const lines = text.split("\n");
+  let html = "";
+  let inCode = false;
+  let codeBuffer = "";
+  let codeLang = "";
+  let inList = false;
+
+  const escape = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const inlineFormat = (line) => {
+    return line
+      .replace(/`([^`]+)`/g, `<code style="background:${dark ? "#2a2a3e" : "#e8e8ef"};padding:2px 6px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.85em">$1</code>`)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, `<a href="$2" target="_blank" style="color:#6c63ff;text-decoration:underline">$1</a>`);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Code blocks
+    if (line.startsWith("```")) {
+      if (!inCode) {
+        if (inList) { html += "</ul>"; inList = false; }
+        inCode = true;
+        codeLang = line.slice(3).trim() || "code";
+        codeBuffer = "";
+        continue;
+      } else {
+        inCode = false;
+        html += `<div style="margin:10px 0;border-radius:10px;overflow:hidden;border:1px solid ${dark ? "#2a2a40" : "#e8e8f0"}">
+          <div style="background:${dark ? "#1a1a2e" : "#e8e8f0"};padding:6px 12px;font-size:0.68rem;font-family:'JetBrains Mono',monospace;color:${dark ? "#888" : "#666"};display:flex;justify-content:space-between;align-items:center">
+            <span>${codeLang}</span>
+            <span style="cursor:pointer;color:#6c63ff" onclick="navigator.clipboard.writeText(this.closest('div').nextSibling.textContent)">copy</span>
+          </div>
+          <pre style="margin:0;padding:14px;background:${dark ? "#0d0d1a" : "#f8f8fc"};overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:0.82rem;line-height:1.6;color:${dark ? "#a8ff78" : "#1a1a2e"}"><code>${escape(codeBuffer.trimEnd())}</code></pre>
+        </div>`;
+        codeBuffer = "";
+        continue;
+      }
+    }
+    if (inCode) { codeBuffer += line + "\n"; continue; }
+
+    // Headings
+    if (line.startsWith("### ")) { if (inList) { html += "</ul>"; inList = false; } html += `<h3 style="margin:14px 0 6px;font-family:'Playfair Display',serif;font-size:1rem;color:${dark ? "#e8e6f0" : "#1a1a2e"}">${inlineFormat(line.slice(4))}</h3>`; continue; }
+    if (line.startsWith("## ")) { if (inList) { html += "</ul>"; inList = false; } html += `<h2 style="margin:16px 0 8px;font-family:'Playfair Display',serif;font-size:1.1rem;color:${dark ? "#e8e6f0" : "#1a1a2e"}">${inlineFormat(line.slice(3))}</h2>`; continue; }
+    if (line.startsWith("# ")) { if (inList) { html += "</ul>"; inList = false; } html += `<h1 style="margin:18px 0 10px;font-family:'Playfair Display',serif;font-size:1.2rem;color:${dark ? "#e8e6f0" : "#1a1a2e"}">${inlineFormat(line.slice(2))}</h1>`; continue; }
+
+    // Horizontal rule
+    if (line.match(/^[-*_]{3,}$/)) { if (inList) { html += "</ul>"; inList = false; } html += `<hr style="border:none;border-top:1px solid ${dark ? "#2a2a40" : "#e8e8f0"};margin:12px 0">`; continue; }
+
+    // Lists
+    if (line.match(/^[-*+] /)) {
+      if (!inList) { html += `<ul style="margin:8px 0;padding-left:20px;list-style:none">`; inList = true; }
+      html += `<li style="margin:4px 0;display:flex;gap:8px;align-items:flex-start"><span style="color:#6c63ff;flex-shrink:0;margin-top:2px">▸</span><span>${inlineFormat(line.slice(2))}</span></li>`;
+      continue;
+    }
+    if (line.match(/^\d+\. /)) {
+      if (!inList) { html += `<ul style="margin:8px 0;padding-left:20px;list-style:none">`; inList = true; }
+      const num = line.match(/^(\d+)\./)[1];
+      html += `<li style="margin:4px 0;display:flex;gap:8px;align-items:flex-start"><span style="color:#6c63ff;flex-shrink:0;font-weight:700;font-size:0.82rem;margin-top:2px">${num}.</span><span>${inlineFormat(line.replace(/^\d+\. /, ""))}</span></li>`;
+      continue;
+    }
+
+    // Close list if needed
+    if (inList && line.trim() === "") { html += "</ul>"; inList = false; }
+    else if (inList && !line.match(/^[-*+\d]/)) { html += "</ul>"; inList = false; }
+
+    // Blockquote
+    if (line.startsWith("> ")) { html += `<blockquote style="border-left:3px solid #6c63ff;padding:8px 12px;margin:8px 0;background:${dark ? "#6c63ff11" : "#6c63ff08"};border-radius:0 8px 8px 0;color:${dark ? "#a88dff" : "#5a52cc"}">${inlineFormat(line.slice(2))}</blockquote>`; continue; }
+
+    // Empty line
+    if (line.trim() === "") { html += "<br>"; continue; }
+
+    // Regular paragraph
+    html += `<p style="margin:4px 0;line-height:1.7">${inlineFormat(line)}</p>`;
+  }
+
+  if (inList) html += "</ul>";
+  return html;
+}
+
+function MarkdownMessage({ content, dark }) {
+  const html = renderMarkdown(content, dark);
+  return <div dangerouslySetInnerHTML={{ __html: html }} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.92rem", lineHeight: 1.7, wordBreak: "break-word" }} />;
+}
+
+
 function CodeRunner({ dark, accent, accent2, onClose, onSendToChat }) {
   const [code, setCode] = useState(`// JavaScript Code Runner
 // Write your code here and click Run!
@@ -640,7 +731,12 @@ export default function AuraAI() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  useEffect(() => { localStorage.setItem("aura_users", JSON.stringify(users)); }, [users]);
+  useEffect(() => {
+    // Only save users if there are actually users to save — prevents overwriting on fresh render
+    if (Object.keys(users).length > 0) {
+      localStorage.setItem("aura_users", JSON.stringify(users));
+    }
+  }, [users]);
   useEffect(() => { if (currentUser) localStorage.setItem("aura_current_user", currentUser); else localStorage.removeItem("aura_current_user"); }, [currentUser]);
   useEffect(() => {
     if (!currentUser) return;
