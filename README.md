@@ -1,18 +1,17 @@
-# DukanPOS 🚀
+# Aura AI 🌌
 
-**DukanPOS** is a custom-built, lightweight Point-of-Sale (POS) and inventory management software engineered to streamline retail workflows, track sales data, and optimize stock management for small-to-medium businesses.
+**Aura AI** is a fully deployed, high-performance cross-platform AI assistant interface built using React, Vite, and tailored for both web and mobile deployment using Capacitor. 
 
-## ✨ Core Features
-* **Inventory Management:** Live tracking of stock levels with low-inventory automated alerts.
-* **Transaction Engine:** Seamless checkout interface supporting fast billing and receipt generation.
-* **Sales Analytics:** Simple, data-driven daily profit and revenue breakdown summaries.
-* **Offline Capability:** Designed to run reliably under local infrastructure constraints.
+## 🌐 Live Production Build
+* **Web Application:** [aura-ai-livid.vercel.app](https://vercel.app)
 
-## 🛠️ Technical Architecture
-* **Frontend:** [e.g., Python Tkinter / Electron / C# WPF]
-* **Backend & Database:** [e.g., SQLite / PostgreSQL / Node.js]
-* **Design Pattern:** [e.g., Model-View-Controller (MVC)]
+## 🚀 Key Engineering Features
+* **Cross-Platform Compilation:** Built with an active native Android wrapper architecture (`Capacitor`), enabling compilation into a native mobile app package (`.apk` / `.aab`).
+* **Optimized Bundling:** Developed on top of Vite for lightning-fast Hot Module Replacement (HMR) and lightweight production bundles.
+* **Modern Interface:** Engineered with a responsive, modern web UI designed to handle continuous AI chat streams and API states.
 
-## 📈 Future Roadmap
-* Integrating AI-driven sales forecasting using historical data APIs.
-* Deploying a mobile-friendly companion app for real-time remote store monitoring.
+## 🛠️ Tech Stack
+* **Frontend Framework:** React.js (JavaScript / JSX)
+* **Build Tool:** Vite
+* **Mobile Bridge:** Capacitor (Targeting Android ecosystem)
+* **Hosting Platform:** Vercel (Production environment)
