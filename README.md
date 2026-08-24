@@ -1,16 +1,18 @@
-# React + Vite
+# DukanPOS 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**DukanPOS** is a custom-built, lightweight Point-of-Sale (POS) and inventory management software engineered to streamline retail workflows, track sales data, and optimize stock management for small-to-medium businesses.
 
-Currently, two official plugins are available:
+## ✨ Core Features
+* **Inventory Management:** Live tracking of stock levels with low-inventory automated alerts.
+* **Transaction Engine:** Seamless checkout interface supporting fast billing and receipt generation.
+* **Sales Analytics:** Simple, data-driven daily profit and revenue breakdown summaries.
+* **Offline Capability:** Designed to run reliably under local infrastructure constraints.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🛠️ Technical Architecture
+* **Frontend:** [e.g., Python Tkinter / Electron / C# WPF]
+* **Backend & Database:** [e.g., SQLite / PostgreSQL / Node.js]
+* **Design Pattern:** [e.g., Model-View-Controller (MVC)]
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 📈 Future Roadmap
+* Integrating AI-driven sales forecasting using historical data APIs.
+* Deploying a mobile-friendly companion app for real-time remote store monitoring.
